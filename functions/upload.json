@@ -3,8 +3,8 @@ export async function onRequestPost(context) {
     const { request, env } = context;
     const filename = request.headers.get('X-Filename') || `audio-${Date.now()}.mp3`;
     
-    // 利用綁定的 R2 儲存桶寫入檔案
-    await env.MY_BUCKET.put(filename, request.body);
+    // 這裡必須與 Cloudflare 後台的繫結名稱「BUCKET」完全相符
+    await env.BUCKET.put(filename, request.body);
 
     return new Response(JSON.stringify({ 
       success: true, 
