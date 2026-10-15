@@ -100,6 +100,8 @@ interface ArrangeProps {
   recording: RecordingPreview | null
   following: boolean
   renderHeader: (track: StudioTrack) => ReactNode
+  /** Width of the track-control column (default HEADER_W; a narrow stub when collapsed on phones). */
+  headerWidth?: number
   corner: ReactNode
   footer: ReactNode
   /** Commit region edits made by a gesture. */
@@ -132,6 +134,7 @@ interface ArrangeProps {
  */
 export function Arrange(props: ArrangeProps) {
   const { studio, tracks, zoom, onZoom, playhead, onSeek, selection, onSelect, selectedTrack, onSelectTrack, automationMode, snap, others, recording } = props
+  const headerW = props.headerWidth ?? HEADER_W
   const scroller = useRef<HTMLDivElement>(null)
   const [view, setView] = useState({ left: 0, width: 1200 })
   const [drafts, setDrafts] = useState<Drafts | null>(null)
@@ -148,7 +151,7 @@ export function Arrange(props: ArrangeProps) {
 
   const length = Object.values(studio.regions).reduce((e, r) => Math.max(e, r.start + r.duration), 0)
   const sectionsEnd = Object.values(studio.sections).reduce((e, s) => Math.max(e, s.end), 0)
-  const seconds = Math.max(length + 30, sectionsEnd + 10, (view.width - HEADER_W) / zoom + 1, recording ? recording.start + recording.elapsed + 10 : 0)
+  const seconds = Math.max(length + 30, sectionsEnd + 10, (view.width - headerW) / zoom + 1, recording ? recording.start + recording.elapsed + 10 : 0)
   const contentW = Math.ceil(seconds * zoom)
 
   /* ---------- scroll tracking (for waveform slices) ---------- */
@@ -176,9 +179,9 @@ export function Arrange(props: ArrangeProps) {
     const el = scroller.current
     if (!el || !props.following) return
     const x = playhead * zoom
-    const visible = el.clientWidth - HEADER_W
+    const visible = el.clientWidth - headerW
     if (x < el.scrollLeft || x > el.scrollLeft + visible - 40) el.scrollLeft = Math.max(0, x - visible * 0.15)
-  }, [playhead, zoom, props.following])
+  }, [playhead, zoom, props.following, headerW])
 
   /* ---------- zoom: wheel / trackpad pinch / Safari gesture / touch pinch ---------- */
   const zoomRef = useRef(zoom)
@@ -189,7 +192,7 @@ export function Arrange(props: ArrangeProps) {
     const el = scroller.current
     if (!el) return
     const z = clampZoom(next)
-    const x = clientX - el.getBoundingClientRect().left - HEADER_W
+    const x = clientX - el.getBoundingClientRect().left - headerW
     const t = (el.scrollLeft + x) / zoomRef.current
     zoomRef.current = z
     onZoom(z)
@@ -630,7 +633,7 @@ export function Arrange(props: ArrangeProps) {
   /* ---------- ruler / lane clicks ---------- */
   const timeAt = (clientX: number) => {
     const el = scroller.current!
-    return Math.max(0, (clientX - el.getBoundingClientRect().left - HEADER_W + el.scrollLeft) / zoom)
+    return Math.max(0, (clientX - el.getBoundingClientRect().left - headerW + el.scrollLeft) / zoom)
   }
   const seekDrag = useRef(false)
   const step = rulerStep(zoom)
@@ -687,11 +690,11 @@ export function Arrange(props: ArrangeProps) {
       }}
       data-arrange
     >
-      <div className="relative" style={{ width: HEADER_W + contentW, minHeight: '100%' }}>
+      <div className="relative" style={{ width: headerW + contentW, minHeight: '100%', ['--header-w' as string]: `${headerW}px` }}>
         {/* Ruler + sections */}
         <div className="sticky top-0 z-30">
         <div className="flex" style={{ height: RULER_H }}>
-          <div className="sticky left-0 z-40 flex shrink-0 items-center border-r border-b border-line bg-[#171717] px-2" style={{ width: HEADER_W }}>
+          <div className="sticky left-0 z-40 flex shrink-0 items-center border-r border-b border-line bg-[#171717] px-2" style={{ width: 'var(--header-w)' }}>
             {props.corner}
           </div>
           <div
@@ -721,7 +724,7 @@ export function Arrange(props: ArrangeProps) {
           </div>
         </div>
         <div className="flex" style={{ height: SECTION_H }}>
-          <div className="sticky left-0 z-40 flex shrink-0 items-center gap-1 border-r border-b border-line bg-[#151515] px-2" style={{ width: HEADER_W }}>
+          <div className="sticky left-0 z-40 flex shrink-0 items-center gap-1 border-r border-b border-line bg-[#151515] px-2" style={{ width: 'var(--header-w)' }}>
             <span className="text-[10px] font-semibold tracking-widest text-white/40 uppercase">區段</span>
             <button
               type="button"
@@ -806,7 +809,7 @@ export function Arrange(props: ArrangeProps) {
             <div className="flex" style={{ height: LANE_H }} data-lane={track.id}>
               <div
                 className={`sticky left-0 z-20 shrink-0 border-r border-b border-line ${selectedTrack === track.id ? 'bg-[#232323]' : 'bg-[#191919]'}`}
-                style={{ width: HEADER_W }}
+                style={{ width: 'var(--header-w)' }}
                 onPointerDown={() => onSelectTrack(track.id)}
               >
                 {props.renderHeader(track)}
@@ -912,26 +915,26 @@ export function Arrange(props: ArrangeProps) {
           )
         })}
         {dropAt && dropAt.trackId === null && (
-          <div className="pointer-events-none my-2 mr-2 rounded-lg border-2 border-dashed border-go/70 bg-go/10 py-3 text-center text-xs font-semibold text-go" style={{ marginLeft: HEADER_W + 8 }} data-drop-new-track>
+          <div className="pointer-events-none my-2 mr-2 rounded-lg border-2 border-dashed border-go/70 bg-go/10 py-3 text-center text-xs font-semibold text-go" style={{ marginLeft: headerW + 8 }} data-drop-new-track>
             ⇪ 放開上傳到新音軌 @ {dropAt.time.toFixed(2)}s
           </div>
         )}
         <div className="flex">
-          <div className="sticky left-0 z-20 shrink-0 border-r border-line bg-[#151515] p-2" style={{ width: HEADER_W }}>
+          <div className="sticky left-0 z-20 shrink-0 border-r border-line bg-[#151515] p-2" style={{ width: 'var(--header-w)' }}>
             {props.footer}
           </div>
         </div>
 
         {/* Section boundaries across the lanes */}
         {sections.flatMap((sec) => [
-          <div key={`${sec.id}s`} className="pointer-events-none absolute bottom-0 z-[5] w-px opacity-40" style={{ top: RULER_H + SECTION_H, left: HEADER_W + sec.start * zoom, background: sec.color }} />,
-          <div key={`${sec.id}e`} className="pointer-events-none absolute bottom-0 z-[5] w-px opacity-25" style={{ top: RULER_H + SECTION_H, left: HEADER_W + sec.end * zoom, background: sec.color }} />,
+          <div key={`${sec.id}s`} className="pointer-events-none absolute bottom-0 z-[5] w-px opacity-40" style={{ top: RULER_H + SECTION_H, left: headerW + sec.start * zoom, background: sec.color }} />,
+          <div key={`${sec.id}e`} className="pointer-events-none absolute bottom-0 z-[5] w-px opacity-25" style={{ top: RULER_H + SECTION_H, left: headerW + sec.end * zoom, background: sec.color }} />,
         ])}
 
         {/* Playheads */}
-        <div className="pointer-events-none absolute top-0 bottom-0 z-[25] w-px bg-panic shadow-[0_0_6px_#ff453a]" style={{ left: HEADER_W + playhead * zoom }} data-playhead />
+        <div className="pointer-events-none absolute top-0 bottom-0 z-[25] w-px bg-panic shadow-[0_0_6px_#ff453a]" style={{ left: headerW + playhead * zoom }} data-playhead />
         {others.map((o) => (
-          <div key={o.id} className="pointer-events-none absolute top-0 bottom-0 z-[24] w-px opacity-70" style={{ left: HEADER_W + o.playhead * zoom, background: o.color }} />
+          <div key={o.id} className="pointer-events-none absolute top-0 bottom-0 z-[24] w-px opacity-70" style={{ left: headerW + o.playhead * zoom, background: o.color }} />
         ))}
       </div>
       {nodeMenu && nodeInfo(nodeMenu.target) && (
@@ -1268,7 +1271,7 @@ function AutomationLaneRow({
 
   return (
     <div className="flex" style={{ height: AUTO_H }} data-auto-lane={`${track.id}:${param}`}>
-      <div className="sticky left-0 z-20 flex shrink-0 flex-col justify-center gap-1 border-r border-b border-line bg-[#141414] py-1 pr-2 pl-5" style={{ width: HEADER_W }}>
+      <div className="sticky left-0 z-20 flex shrink-0 flex-col justify-center gap-1 border-r border-b border-line bg-[#141414] py-1 pr-2 pl-5" style={{ width: 'var(--header-w)' }}>
         <div className="flex items-center gap-1.5">
           <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: info.color }} />
           <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-white/80">{info.label}</span>

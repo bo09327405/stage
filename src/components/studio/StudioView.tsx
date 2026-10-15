@@ -48,7 +48,7 @@ import { studioMediaFolder, type ShowRef } from '../../types/project'
 import { projectLength, sortedTracks, type StudioRegion, type StudioSection, type StudioTrack } from '../../types/studio'
 import { HistoryControls } from '../ui/HistoryControls'
 import { InputPanel, type ChainStatus } from './InputPanel'
-import { Arrange, HEADER_W, type RecordingPreview } from './Arrange'
+import { Arrange, HEADER_W, LANE_H, type RecordingPreview } from './Arrange'
 import { ExportDialog } from './ExportDialog'
 import { FxPanel, Inspector, PropertiesPanel, type InspectorTab } from './Inspector'
 import { LibraryPanel } from './LibraryPanel'
@@ -287,6 +287,23 @@ export function StudioView({
   const [automationMode, setAutomationMode] = useState(false)
   const [snap, setSnap] = useState(true)
   const [stereo, setStereo] = useState(() => readPref('theatre.studio.stereo') !== '0')
+  // Phones: the track-control column folds into a narrow stub and its controls live in a slide-in drawer.
+  // The choice (pinned open on the left, or folded) is remembered; a phone starts folded.
+  const [phone, setPhone] = useState(() => window.matchMedia('(max-width: 767px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const on = () => setPhone(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  const [tracksFolded, setTracksFolded] = useState(() => readPref('theatre.studio.tracksFolded') !== '0')
+  const [trackDrawer, setTrackDrawer] = useState(false)
+  const setFolded = (folded: boolean) => {
+    setTracksFolded(folded)
+    writePref('theatre.studio.tracksFolded', folded ? '1' : '0')
+  }
+  const folded = phone && tracksFolded
+  const headerW = folded ? 44 : HEADER_W
   const [tab, setTab] = useState<InspectorTab>('props')
   // Below lg the side panel is a slide-out drawer over the timeline (always docked from lg up).
   const [sideOpen, setSideOpen] = useState(false)
@@ -501,6 +518,20 @@ export function StudioView({
     if (d === 0) return
     commit(sel.map((r) => ({ id: r.id, patch: { start: Math.round((r.start + d) * 1000) / 1000 } })), '微調片段位置', 'nudge')
   }
+  /** One track's full control strip (inline column, or inside the phone drawer). */
+  const trackHeaderOf = (track: StudioTrack) => (
+    <TrackHeader
+      track={track}
+      armed={armed === track.id}
+      onArm={() => setArmed(armed === track.id ? null : track.id)}
+      onChange={(patch, label) => onTrackChange(track, patch, label)}
+      onRemove={() => removeTrack(projectId, studio!, track)}
+      onToggleLane={(param) =>
+        setTrackAutomation(projectId, studio!.id, track, param, { shown: !track.automation[param]?.shown, ...(track.automation[param] ? {} : { points: [] }) }, track.automation[param]?.shown ? '隱藏自動化軌' : '顯示自動化軌')
+      }
+    />
+  )
+
   /** Open the 素材 panel on the file behind a clip. */
   const revealInLibrary = (r: StudioRegion) => {
     if (!r.url) return
@@ -1074,27 +1105,57 @@ export function StudioView({
                 onSectionMenu={(section, x, y) => setSectionMenu({ section, x, y })}
                 onTrackAutomation={(track, param, points, label) => setTrackAutomation(projectId, studio.id, track, param, { points, shown: true }, label)}
                 onHideLane={(track, param) => setTrackAutomation(projectId, studio.id, track, param, { shown: false }, '隱藏自動化軌')}
-                corner={<span className="text-[10px] font-semibold tracking-widest text-white/40 uppercase">{tracks.length} 音軌</span>}
+                headerWidth={headerW}
+                corner={
+                  folded ? (
+                    <button type="button" onClick={() => setTrackDrawer(true)} className="flex h-full w-full items-center justify-center text-base" aria-label="開啟音軌列表" data-track-drawer-open>
+                      🎛
+                    </button>
+                  ) : (
+                    <span className="text-[10px] font-semibold tracking-widest text-white/40 uppercase">{tracks.length} 音軌</span>
+                  )
+                }
                 footer={
+                  folded ? (
+                    <button type="button" onClick={() => addTrack(projectId, studio)} className="flex h-9 w-full items-center justify-center rounded-lg border border-dashed border-white/20 text-sm text-white/60" aria-label="新增音軌">
+                      ＋
+                    </button>
+                  ) : (
                   <button type="button" onClick={() => addTrack(projectId, studio)} className="min-h-9 w-full rounded-lg border border-dashed border-white/20 text-xs text-white/60 hover:border-accent hover:text-white" data-add-track>
                     ＋ 新增音軌
                   </button>
+                  )
                 }
-                renderHeader={(track) => (
-                  <TrackHeader
-                    track={track}
-                    armed={armed === track.id}
-                    onArm={() => setArmed(armed === track.id ? null : track.id)}
-                    onChange={(patch, label) => onTrackChange(track, patch, label)}
-                    onRemove={() => removeTrack(projectId, studio, track)}
-                    onToggleLane={(param) =>
-                      setTrackAutomation(projectId, studio.id, track, param, { shown: !track.automation[param]?.shown, ...(track.automation[param] ? {} : { points: [] }) }, track.automation[param]?.shown ? '隱藏自動化軌' : '顯示自動化軌')
-                    }
-                  />
-                )}
+                renderHeader={(track) =>
+                  folded ? (
+                    <button
+                      type="button"
+                      onClick={() => setTrackDrawer(true)}
+                      className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-[10px] font-bold text-white/70"
+                      aria-label={`音軌 ${track.name}：開啟音軌列表`}
+                    >
+                      <span className="h-3 w-3 rounded-full" style={{ background: track.color }} />
+                      <span className="max-w-full overflow-hidden px-0.5 text-center leading-tight break-all">{[...track.name][0]}</span>
+                      {track.mute && <span className="text-standby">M</span>}
+                      {track.solo && <span className="text-accent">S</span>}
+                    </button>
+                  ) : (
+                    trackHeaderOf(track)
+                  )
+                }
               />
               {/* Zoom (bottom right) */}
               <div className="absolute right-3 bottom-3 z-30 flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#1d1d1d]/95 px-2 py-1.5 shadow-xl backdrop-blur" data-zoom>
+                <button
+                  type="button"
+                  onClick={() => (folded ? setTrackDrawer(true) : setFolded(true))}
+                  className="h-9 rounded-md bg-white/10 px-2.5 text-[11px] font-semibold text-white/85 hover:bg-white/15 md:hidden"
+                  aria-label={folded ? '開啟音軌列表' : '收合音軌欄位'}
+                  aria-expanded={!folded}
+                  data-tracks-toggle
+                >
+                  🎛 {folded ? '音軌列表' : '收合音軌'}
+                </button>
                 <button
                   type="button"
                   onClick={() => setSideOpen(true)}
@@ -1126,7 +1187,7 @@ export function StudioView({
                 <button
                   type="button"
                   onClick={() => {
-                    const width = (document.querySelector('[data-arrange]')?.clientWidth ?? 900) - HEADER_W - 40
+                    const width = (document.querySelector('[data-arrange]')?.clientWidth ?? 900) - headerW - 40
                     setZoom(clampZoom(width / Math.max(5, length)))
                   }}
                   className="h-7 rounded-md px-2 text-[11px] text-white/60 hover:bg-white/10"
@@ -1213,6 +1274,58 @@ export function StudioView({
             <span>Space 播放 · R 錄音 · A 自動化 · ⌘E 分割 · ⌘M 靜音 · ⌘C/X/V 複製剪下貼上 · ⌘D 複製一份 · ⌫ 刪除 · ⌘Z 復原</span>
             <span className="ml-auto">已選 {validSelection.length} 個片段 · 長度 {timecode(length)}</span>
           </div>
+          {/* Phone track drawer: every track's controls, sliding over the timeline */}
+          {phone && (
+            <>
+              <div
+                className={`fixed inset-0 z-[74] bg-black/50 transition-opacity duration-200 ${trackDrawer ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+                onClick={() => setTrackDrawer(false)}
+                aria-hidden
+                data-track-backdrop
+              />
+              <aside
+                className={`fixed inset-y-0 left-0 z-[75] flex w-[min(340px,90vw)] flex-col bg-[#151515] pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] pl-[env(safe-area-inset-left,0px)] shadow-2xl transition-[transform,visibility] duration-200 will-change-transform ${trackDrawer ? 'visible translate-x-0' : 'invisible -translate-x-full'}`}
+                aria-label="音軌列表"
+                aria-hidden={!trackDrawer}
+                data-track-drawer
+              >
+                <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
+                  <span className="text-sm font-semibold">🎛 音軌列表 · {tracks.length}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFolded(false)
+                      setTrackDrawer(false)
+                    }}
+                    className="ml-auto h-10 rounded-lg bg-white/10 px-3 text-xs font-semibold"
+                    title="固定顯示在左側（再按「收合音軌」可收起）"
+                  >
+                    📌 固定在左側
+                  </button>
+                  <button type="button" onClick={() => setTrackDrawer(false)} className="h-10 w-10 rounded-lg bg-white/10 text-lg" aria-label="關閉音軌列表">
+                    ✕
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                  {tracks.map((track) => (
+                    <div
+                      key={track.id}
+                      className={`border-b border-line ${selectedTrack === track.id ? 'bg-[#232323]' : 'bg-[#191919]'}`}
+                      style={{ height: LANE_H }}
+                      onPointerDown={() => setSelectedTrack(track.id)}
+                    >
+                      {trackHeaderOf(track)}
+                    </div>
+                  ))}
+                  <div className="p-3">
+                    <button type="button" onClick={() => addTrack(projectId, studio!)} className="min-h-12 w-full rounded-lg border border-dashed border-white/20 text-sm text-white/70">
+                      ＋ 新增音軌
+                    </button>
+                  </div>
+                </div>
+              </aside>
+            </>
+          )}
           {/* Touch helper bar: the same actions as the long-press menu, one tap away */}
           {selectedRegions.length > 0 && !menu && (
             <div
