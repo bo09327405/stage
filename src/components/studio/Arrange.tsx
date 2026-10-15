@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { PEAK_RESOLUTION, bufferOffset, peaksOf, regionBuffer } from '../../studio/audio'
 import { clampZoom, dbLabel, rulerLabel, rulerStep } from '../../studio/format'
@@ -7,12 +8,15 @@ import { CurveLayer, CurveToolbar } from './CurveEditor'
 import { useLongPressContextMenu } from '../../hooks/useLongPressContextMenu'
 import { LONG_PRESS_MS, curvePath, curveSegments as curveSegmentsOf, type CurveGeometry, type CurveGrab } from '../../studio/curveGeometry'
 import {
+  FADE_SHAPES,
   PARAM_INFO,
   REGION_GAIN_RANGE,
   TRACK_PARAMS,
+  fadeRamp,
   filterHz,
   laneValueAt,
   sortedSections,
+  type FadeShape,
   type StudioPoint,
   type StudioPresence,
   type StudioProject,
@@ -100,6 +104,9 @@ interface ArrangeProps {
   recording: RecordingPreview | null
   following: boolean
   renderHeader: (track: StudioTrack) => ReactNode
+  /** Per-clip undo (the last 10 edits of one clip). */
+  canUndoRegion?: (id: string) => boolean
+  onUndoRegion?: (id: string) => void
   /** Width of the track-control column (default HEADER_W; a narrow stub when collapsed on phones). */
   headerWidth?: number
   corner: ReactNode
@@ -132,6 +139,65 @@ interface ArrangeProps {
  * screens, or the slider. Regions: drag to move (also across tracks), drag edges to trim, drag the
  * top corners for fades; in automation mode click to add a node, drag nodes, double-click to remove.
  */
+/** The area a fade removes (between the clip's top edge and the gain curve), as an SVG path in an h-tall box. */
+function fadeAreaPath(shape: FadeShape | undefined, len: number, h: number, dir: 'in' | 'out', boxW = 0): string {
+  const n = 24
+  const silentX = dir === 'in' ? 0 : boxW
+  const fullX = dir === 'in' ? len : boxW - len
+  // Curve points from the full-level end (p = 1) back to the silent end (p = 0).
+  const curve: string[] = []
+  for (let i = n; i >= 0; i--) {
+    const p = i / n
+    const gain = fadeRamp(shape, p, dir === 'out')
+    const x = silentX + (fullX - silentX) * p
+    curve.push(`${x.toFixed(1)},${((1 - gain) * h).toFixed(1)}`)
+  }
+  return `M${silentX.toFixed(1)},0 L${fullX.toFixed(1)},0 L${curve.join(' L')} Z`
+}
+
+/** Fade curve picker: opens at the node on desktop, as a bottom sheet on phones (see [data-sheet-menu]). */
+function FadeShapeMenu({ kind, x, y, value, onPick, onClose }: { kind: 'in' | 'out'; x: number; y: number; value: FadeShape; onPick: (s: FadeShape) => void; onClose: () => void }) {
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const down = (e: globalThis.PointerEvent) => !box.current?.contains(e.target as Node) && onClose()
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    // A tick later: the press that opened the menu (still releasing) must not close it.
+    const t = window.setTimeout(() => window.addEventListener('pointerdown', down, true), 80)
+    window.addEventListener('keydown', key)
+    return () => {
+      window.clearTimeout(t)
+      window.removeEventListener('pointerdown', down, true)
+      window.removeEventListener('keydown', key)
+    }
+  }, [onClose])
+  return createPortal(
+    <div
+      ref={box}
+      data-sheet-menu
+      role="menu"
+      aria-label={kind === 'in' ? '淡入模式' : '淡出模式'}
+      className="fixed z-[130] w-64 rounded-xl border border-white/10 bg-[#202020]/95 p-1 text-white shadow-2xl backdrop-blur-xl"
+      style={{ left: Math.min(x, window.innerWidth - 270), top: Math.min(y, window.innerHeight - 260) }}
+    >
+      <div className="px-3 py-2 text-xs text-white/45">{kind === 'in' ? '淡入模式' : '淡出模式'}</div>
+      {FADE_SHAPES.map((s) => (
+        <button
+          key={s.id}
+          type="button"
+          role="menuitemradio"
+          aria-checked={value === s.id}
+          onClick={() => onPick(s.id)}
+          className="flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-left text-sm hover:bg-white/10"
+        >
+          <span>{s.label}</span>
+          {value === s.id && <span>✓</span>}
+        </button>
+      ))}
+    </div>,
+    document.body,
+  )
+}
+
 export function Arrange(props: ArrangeProps) {
   const { studio, tracks, zoom, onZoom, playhead, onSeek, selection, onSelect, selectedTrack, onSelectTrack, automationMode, snap, others, recording } = props
   const headerW = props.headerWidth ?? HEADER_W
@@ -283,17 +349,58 @@ export function Arrange(props: ArrangeProps) {
   type Gesture =
     | { kind: 'move'; x: number; y: number; ids: string[]; origin: Record<string, { start: number; trackIndex: number }>; moved: boolean; clicked: string }
     | { kind: 'trim-l' | 'trim-r' | 'fade-in' | 'fade-out'; x: number; id: string; origin: StudioRegion; moved: boolean }
+    | { kind: 'gain'; x: number; y: number; id: string; origin: StudioRegion; moved: boolean; armed: boolean }
     | { kind: 'node'; id: string; index: number; origin: StudioRegion; height: number; rectTop: number; rectLeft: number; moved: boolean }
     | { kind: 'sec-move' | 'sec-l' | 'sec-r'; x: number; id: string; origin: StudioSection; moved: boolean }
     | { kind: 'anode'; track: StudioTrack; param: TrackParam; index: number; origin: StudioPoint[]; laneLeft: number; laneTop: number; moved: boolean }
     | { kind: 'curve'; what: CurveGrab; index: number; origin: StudioPoint[]; spec: CurveSpec; x: number; y: number; moved: boolean; latest: StudioPoint[] | null }
   const gesture = useRef<Gesture | null>(null)
+  // Floating readout while a clip's volume is dragged, and the fade-curve picker (long-press on a fade node).
+  const [gainTip, setGainTip] = useState<{ x: number; y: number; text: string } | null>(null)
+  const [shapeMenu, setShapeMenu] = useState<{ id: string; kind: 'in' | 'out'; x: number; y: number } | null>(null)
   const draftsRef = useRef<Drafts | null>(null)
   const setDraftsBoth = (d: Drafts | null) => {
     draftsRef.current = d
     setDrafts(d)
   }
   const trackIndex = (id: string) => tracks.findIndex((t) => t.id === id)
+
+  /**
+   * Pressing a clip's body never moves it (only the ⠿ grip does). It selects; on an already selected
+   * clip a vertical drag then sets the clip's gain. Touch: an unselected clip only taps to select
+   * (a drag on it scrolls the timeline, a hold opens its menu).
+   */
+  const beginBody = (e: PointerEvent, r: StudioRegion) => {
+    if (e.button !== 0 || (e.pointerType === 'touch' && touches.current.size > 1)) return
+    e.stopPropagation()
+    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+      onSelect(selection.includes(r.id) ? selection.filter((x) => x !== r.id) : [...selection, r.id])
+      return
+    }
+    const wasSelected = selection.includes(r.id)
+    if (e.pointerType !== 'mouse' && !wasSelected) {
+      const from = { x: e.clientX, y: e.clientY, id: e.pointerId }
+      const finish = (up: globalThis.PointerEvent, cancelled: boolean) => {
+        window.removeEventListener('pointerup', onUp)
+        window.removeEventListener('pointercancel', onCancel)
+        if (!cancelled && up.pointerId === from.id && Math.hypot(up.clientX - from.x, up.clientY - from.y) < 6) {
+          onSelect([r.id])
+          onSelectTrack(r.trackId)
+        }
+      }
+      const onUp = (up: globalThis.PointerEvent) => finish(up, false)
+      const onCancel = (up: globalThis.PointerEvent) => finish(up, true)
+      window.addEventListener('pointerup', onUp)
+      window.addEventListener('pointercancel', onCancel)
+      return
+    }
+    if (!wasSelected) {
+      onSelect([r.id])
+      onSelectTrack(r.trackId)
+    }
+    e.currentTarget.setPointerCapture(e.pointerId)
+    gesture.current = { kind: 'gain', x: e.clientX, y: e.clientY, id: r.id, origin: r, moved: false, armed: wasSelected }
+  }
 
   const beginMove = (e: PointerEvent, r: StudioRegion, grip = false) => {
     if (e.button !== 0 || e.pointerType === 'touch' && touches.current.size > 1) return
@@ -470,6 +577,14 @@ export function Arrange(props: ArrangeProps) {
       const next: Drafts = {}
       for (const id of g.ids) next[id] = { start: g.origin[id].start + clampedShift, trackId: tracks[g.origin[id].trackIndex + laneShift]?.id }
       setDraftsBoth(next)
+    } else if (g.kind === 'gain') {
+      if (!g.moved && Math.hypot(e.clientX - g.x, e.clientY - g.y) < 4) return
+      g.moved = true
+      if (!g.armed) return
+      // Drag up = louder, down = quieter; a full lane height is about ±2 in linear gain.
+      const gain = Math.round(Math.min(2, Math.max(0, g.origin.gain - ((e.clientY - g.y) / (LANE_H * 0.9)) * 2)) * 100) / 100
+      setDraftsBoth({ [g.id]: { gain } })
+      setGainTip({ x: e.clientX, y: e.clientY, text: dbLabel(gain) })
     } else if (g.kind === 'node') {
       g.moved = true
       const r = g.origin
@@ -539,13 +654,14 @@ export function Arrange(props: ArrangeProps) {
     gesture.current = null
     const d = draftsRef.current
     setDraftsBoth(null)
+    setGainTip(null)
     // A plain click on a clip (no drag): e.g. reveal its file in the 素材 panel.
-    if (g?.kind === 'move' && !g.moved) {
-      const r = studio.regions[g.clicked]
+    if ((g?.kind === 'move' || g?.kind === 'gain') && !g.moved) {
+      const r = studio.regions[g.kind === 'move' ? g.clicked : g.id]
       if (r) props.onRegionClick?.(r)
     }
     if (!g || !g.moved || !d) return
-    const label = { move: '移動片段', 'trim-l': '修剪片段', 'trim-r': '修剪片段', 'fade-in': '淡入', 'fade-out': '淡出', node: '調整自動化節點' }[g.kind as 'move']
+    const label = { move: '移動片段', gain: '調整片段音量', 'trim-l': '修剪片段', 'trim-r': '修剪片段', 'fade-in': '淡入', 'fade-out': '淡出', node: '調整自動化節點' }[g.kind as 'move']
     props.onCommit(
       Object.entries(d).map(([id, patch]) => ({ id, patch })),
       label,
@@ -853,6 +969,18 @@ export function Arrange(props: ArrangeProps) {
                     remote={othersByRegion.get(r.id)}
                     automationMode={automationMode}
                     onMoveStart={(e, grip) => beginMove(e, r, grip)}
+                    onBodyStart={(e) => beginBody(e, r)}
+                    onShape={(kind, e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      gesture.current = null // a long press on the node is not a drag
+                      setDraftsBoth(null)
+                      if (!selection.includes(r.id)) onSelect([r.id])
+                      setShapeMenu({ id: r.id, kind, x: e.clientX, y: e.clientY })
+                    }}
+                    onToggleMute={() => props.onCommit([{ id: r.id, patch: { muted: !r.muted } }], r.muted ? '取消靜音片段' : '靜音片段')}
+                    canUndo={props.canUndoRegion?.(r.id) ?? false}
+                    onUndo={() => props.onUndoRegion?.(r.id)}
                     onEdgeStart={(e, kind) => beginEdge(e, r, kind)}
                     onNodeStart={(e, i, rect) => beginNode(e, r, i, rect)}
                     onAddNode={(e) => addNode(e, r)}
@@ -963,6 +1091,29 @@ export function Arrange(props: ArrangeProps) {
           onClose={() => setNodeEditing(null)}
         />
       )}
+      {/* Live volume readout while a clip's gain is dragged */}
+      {gainTip && (
+        <div
+          className="pointer-events-none fixed z-[120] -translate-x-1/2 -translate-y-full rounded-lg bg-black/90 px-3 py-1.5 font-mono text-lg font-semibold text-white shadow-xl ring-1 ring-white/20"
+          style={{ left: gainTip.x, top: gainTip.y - 28 }}
+          data-gain-tip
+        >
+          {gainTip.text}
+        </div>
+      )}
+      {shapeMenu && studio.regions[shapeMenu.id] && (
+        <FadeShapeMenu
+          kind={shapeMenu.kind}
+          x={shapeMenu.x}
+          y={shapeMenu.y}
+          value={(shapeMenu.kind === 'in' ? studio.regions[shapeMenu.id].fadeInShape : studio.regions[shapeMenu.id].fadeOutShape) ?? 'linear'}
+          onPick={(shape) => {
+            props.onCommit([{ id: shapeMenu.id, patch: shapeMenu.kind === 'in' ? { fadeInShape: shape } : { fadeOutShape: shape } }], shapeMenu.kind === 'in' ? '淡入曲線' : '淡出曲線')
+            setShapeMenu(null)
+          }}
+          onClose={() => setShapeMenu(null)}
+        />
+      )}
     </div>
   )
 }
@@ -978,6 +1129,11 @@ function Region({
   remote,
   automationMode,
   onMoveStart,
+  onBodyStart,
+  onShape,
+  onToggleMute,
+  canUndo,
+  onUndo,
   onEdgeStart,
   onNodeStart,
   onAddNode,
@@ -999,6 +1155,12 @@ function Region({
   remote?: StudioPresence
   automationMode: boolean
   onMoveStart: (e: PointerEvent, grip?: boolean) => void
+  onBodyStart: (e: PointerEvent) => void
+  /** Long-press / right-click on a fade node: pick the fade curve. */
+  onShape: (kind: 'in' | 'out', e: ReactMouseEvent) => void
+  onToggleMute: () => void
+  canUndo: boolean
+  onUndo: () => void
   onEdgeStart: (e: PointerEvent, kind: 'trim-l' | 'trim-r' | 'fade-in' | 'fade-out') => void
   onNodeStart: (e: PointerEvent, index: number, rect: DOMRect) => void
   onAddNode: (e: ReactMouseEvent) => void
@@ -1029,22 +1191,11 @@ function Region({
     <div
       className={`group absolute top-1 overflow-hidden rounded-md border ${selected ? 'touch-none border-white ring-1 ring-white/70' : 'touch-pan-x touch-pan-y border-black/40'} ${r.muted ? 'opacity-40' : ''}`}
       style={{ left: x, width: w, height: h, background: `${color}33`, outline: remote ? `2px solid ${remote.color}` : undefined }}
-      onPointerDown={automationMode ? undefined : onMoveStart}
+      onPointerDown={automationMode ? undefined : onBodyStart}
       onContextMenu={onMenu}
       data-region={r.id}
       title={r.comment || undefined}
     >
-      {/* Touch grip: drag a selected clip from here without waiting for (or fighting) a long press */}
-      {selected && !automationMode && (
-        <div
-          className="absolute top-0 right-0 z-[9] hidden h-9 w-9 touch-none items-center justify-center rounded-bl-xl bg-white/90 text-base text-black shadow pointer-coarse:flex"
-          onPointerDown={(e) => onMoveStart(e, true)}
-          aria-label="拖曳移動片段"
-          data-region-grip
-        >
-          ⠿
-        </div>
-      )}
       {/* Name bar (always draggable, also in automation mode) */}
       <div
         className="relative z-10 flex h-4 items-center gap-1 px-1.5 text-[10px] font-semibold whitespace-nowrap text-black"
@@ -1063,10 +1214,10 @@ function Region({
 
       <Waveform region={r} zoom={zoom} view={view} x={x} width={w} height={h - 16} color={color} />
 
-      {/* Fades */}
+      {/* Fades: the dark area is what the fade removes, drawn along the chosen curve */}
       <svg className="pointer-events-none absolute inset-x-0 top-4 bottom-0 z-[5]" width={w} height={h - 16} preserveAspectRatio="none">
-        {r.fadeIn > 0 && <polygon points={`0,0 ${r.fadeIn * zoom},0 0,${h - 16}`} fill="rgba(0,0,0,0.45)" />}
-        {r.fadeOut > 0 && <polygon points={`${w},0 ${w - r.fadeOut * zoom},0 ${w},${h - 16}`} fill="rgba(0,0,0,0.45)" />}
+        {r.fadeIn > 0 && <path d={fadeAreaPath(r.fadeInShape, r.fadeIn * zoom, h - 16, 'in')} fill="rgba(0,0,0,0.45)" />}
+        {r.fadeOut > 0 && <path d={fadeAreaPath(r.fadeOutShape, r.fadeOut * zoom, h - 16, 'out', w)} fill="rgba(0,0,0,0.45)" />}
       </svg>
 
       {/* Volume automation */}
@@ -1132,25 +1283,52 @@ function Region({
         />
       )}
 
-      {!automationMode && (
-        <>
-          <div className="absolute inset-y-0 left-0 z-[7] w-1.5 cursor-ew-resize hover:bg-white/40 pointer-coarse:w-6 pointer-coarse:bg-white/25" onPointerDown={(e) => onEdgeStart(e, 'trim-l')} data-trim="l" />
-          <div className="absolute inset-y-0 right-0 z-[7] w-1.5 cursor-ew-resize hover:bg-white/40 pointer-coarse:w-6 pointer-coarse:bg-white/25" onPointerDown={(e) => onEdgeStart(e, 'trim-r')} data-trim="r" />
-          <div
-            className="absolute top-4 z-[8] h-2.5 w-2.5 -translate-x-1/2 cursor-ew-resize rounded-sm border border-black bg-white opacity-0 group-hover:opacity-100 pointer-coarse:top-2 pointer-coarse:h-7 pointer-coarse:w-7 pointer-coarse:rounded-full pointer-coarse:opacity-100"
-            style={{ left: Math.max(5, r.fadeIn * zoom) }}
-            onPointerDown={(e) => onEdgeStart(e, 'fade-in')}
-            title="拖曳設定淡入"
-            data-fade="in"
-          />
-          <div
-            className="absolute top-4 z-[8] h-2.5 w-2.5 translate-x-1/2 cursor-ew-resize rounded-sm border border-black bg-white opacity-0 group-hover:opacity-100 pointer-coarse:top-2 pointer-coarse:h-7 pointer-coarse:w-7 pointer-coarse:rounded-full pointer-coarse:opacity-100"
-            style={{ right: Math.max(5, r.fadeOut * zoom) }}
-            onPointerDown={(e) => onEdgeStart(e, 'fade-out')}
-            title="拖曳設定淡出"
-            data-fade="out"
-          />
-        </>
+      {/* Edit nodes of the selected clip: ◤ fade in · ⠿ move · ◥ fade out · ‖ trim · 🔊 mute · ↺ undo (hold a fade node for its curve) */}
+      {selected && !automationMode && (
+        <div className="absolute inset-0 z-[9]" data-clip-nodes>
+          {(() => {
+            const node = 'absolute flex touch-none items-center justify-center rounded-full border border-black/70 bg-[#6b7873]/90 text-white shadow-md select-none h-7 w-7 text-[13px] pointer-coarse:h-10 pointer-coarse:w-10 pointer-coarse:text-lg'
+            const compact = w < 120
+            return (
+              <>
+                {/* Move: only this grip moves a clip (time and across tracks) */}
+                <div
+                  className={`${node} top-1 left-1/2 -translate-x-1/2 cursor-grab`}
+                  onPointerDown={(e) => onMoveStart(e, true)}
+                  aria-label="拖曳移動片段"
+                  title="拖曳移動片段（時間與跨軌道）"
+                  data-region-grip
+                >
+                  ═
+                </div>
+                {/* Trim */}
+                <div className={`${node} top-1/2 left-0.5 -translate-y-1/2 cursor-ew-resize`} onPointerDown={(e) => onEdgeStart(e, 'trim-l')} title="拖曳修剪片頭" data-trim="l">
+                  ‖
+                </div>
+                <div className={`${node} top-1/2 right-0.5 -translate-y-1/2 cursor-ew-resize`} onPointerDown={(e) => onEdgeStart(e, 'trim-r')} title="拖曳修剪片尾" data-trim="r">
+                  ‖
+                </div>
+                {!compact && (
+                  <>
+                    {/* Fades (long-press or right-click: curve) */}
+                    <div className={`${node} top-1 left-0.5 cursor-ew-resize`} onPointerDown={(e) => onEdgeStart(e, 'fade-in')} onContextMenu={(e) => onShape('in', e)} title="拖曳設定淡入 · 長按選曲線" data-fade="in">
+                      ◤
+                    </div>
+                    <div className={`${node} top-1 right-0.5 cursor-ew-resize`} onPointerDown={(e) => onEdgeStart(e, 'fade-out')} onContextMenu={(e) => onShape('out', e)} title="拖曳設定淡出 · 長按選曲線" data-fade="out">
+                      ◥
+                    </div>
+                    <button type="button" data-haptic="tap" className={`${node} bottom-1 left-0.5 cursor-pointer`} onPointerDown={(e) => e.stopPropagation()} onClick={onToggleMute} aria-label={r.muted ? '取消靜音' : '靜音'} aria-pressed={r.muted} title="靜音 / 取消靜音" data-clip-mute>
+                      {r.muted ? '🔇' : '🔊'}
+                    </button>
+                    <button type="button" data-haptic="tap" disabled={!canUndo} className={`${node} right-0.5 bottom-1 cursor-pointer disabled:opacity-35`} onPointerDown={(e) => e.stopPropagation()} onClick={onUndo} aria-label="復原此片段的上一步編輯" title="復原此片段的上一步（最多 10 步）" data-clip-undo>
+                      ↺
+                    </button>
+                  </>
+                )}
+              </>
+            )
+          })()}
+        </div>
       )}
     </div>
   )

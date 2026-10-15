@@ -33,6 +33,37 @@ export interface CurveHandles {
 
 export type RegionKind = 'file' | 'recording' | 'tts'
 
+/** Fade curves. Names describe the curve as heard in time: a fade-out's "smooth start" begins gently. */
+export type FadeShape = 'linear' | 'log' | 'smooth' | 'smoothStart' | 'smoothEnd'
+export const FADE_SHAPES: { id: FadeShape; label: string }[] = [
+  { id: 'linear', label: '線性 Linear' },
+  { id: 'log', label: '對數 Logarithmic' },
+  { id: 'smooth', label: 'Smooth start/Smooth end' },
+  { id: 'smoothStart', label: 'Smooth start' },
+  { id: 'smoothEnd', label: 'Smooth end' },
+]
+const isFadeShape = (v: unknown): v is FadeShape => FADE_SHAPES.some((s) => s.id === v)
+
+/**
+ * Gain of a fade at progress `p` (0 = silent end of the ramp, 1 = full level end of the ramp).
+ * For a fade-out pass the remaining fraction and `out = true`: it is the mirror image in time.
+ */
+export function fadeRamp(shape: FadeShape | undefined, p: number, out = false): number {
+  const x = Math.min(1, Math.max(0, p))
+  switch (out && (shape === 'smoothStart' || shape === 'smoothEnd') ? (shape === 'smoothStart' ? 'smoothEnd' : 'smoothStart') : shape) {
+    case 'log':
+      return Math.log10(1 + 9 * x)
+    case 'smooth':
+      return x * x * (3 - 2 * x)
+    case 'smoothStart':
+      return x * x
+    case 'smoothEnd':
+      return 1 - (1 - x) * (1 - x)
+    default:
+      return x
+  }
+}
+
 export interface StudioRegion {
   id: string
   trackId: string
@@ -53,6 +84,9 @@ export interface StudioRegion {
   gain: number
   fadeIn: number
   fadeOut: number
+  /** Curve of the fade ramps (default linear). */
+  fadeInShape?: FadeShape
+  fadeOutShape?: FadeShape
   muted: boolean
   reverse: boolean
   /** Pitch shift in semitones (−12…12); length is kept. */
@@ -329,6 +363,8 @@ export function normalizeRegion(id: string, raw: Partial<StudioRegion> = {}): St
     gain: num(raw.gain, 1, 0, 2),
     fadeIn: num(raw.fadeIn, 0, 0),
     fadeOut: num(raw.fadeOut, 0, 0),
+    ...(isFadeShape(raw.fadeInShape) ? { fadeInShape: raw.fadeInShape } : {}),
+    ...(isFadeShape(raw.fadeOutShape) ? { fadeOutShape: raw.fadeOutShape } : {}),
     muted: !!raw.muted,
     reverse: !!raw.reverse,
     pitch: num(raw.pitch, 0, -12, 12),
@@ -394,7 +430,7 @@ export const projectLength = (p: StudioProject) => Object.values(p.regions).redu
  */
 export function regionGainAt(r: StudioRegion, t: number): number {
   const auto = curveValueAt(r.automation, t, 1, REGION_GAIN_RANGE, 'linear')
-  const fadeIn = r.fadeIn > 0 ? Math.min(1, t / r.fadeIn) : 1
-  const fadeOut = r.fadeOut > 0 ? Math.min(1, (r.duration - t) / r.fadeOut) : 1
+  const fadeIn = r.fadeIn > 0 ? fadeRamp(r.fadeInShape, t / r.fadeIn) : 1
+  const fadeOut = r.fadeOut > 0 ? fadeRamp(r.fadeOutShape, (r.duration - t) / r.fadeOut, true) : 1
   return Math.max(0, r.gain * auto * Math.max(0, fadeIn) * Math.max(0, fadeOut))
 }

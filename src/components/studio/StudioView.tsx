@@ -390,8 +390,31 @@ export function StudioView({
   }
 
   /* ---------- edits ---------- */
-  const commit = (changes: { id: string; patch: Partial<StudioRegion> }[], label: string, coalesce?: string) => {
+  // Per-clip undo: the values a clip had before each of its last 10 edits (the ↺ node on a selected clip).
+  const clipHistory = useRef(new Map<string, Partial<StudioRegion>[]>())
+  const [, bumpHistory] = useState(0)
+  const undoClip = (id: string) => {
+    const prev = clipHistory.current.get(id)?.pop()
+    if (!prev) return
+    commit([{ id, patch: prev }], '復原片段編輯', undefined, false)
+    bumpHistory((n) => n + 1)
+  }
+  const commit = (changes: { id: string; patch: Partial<StudioRegion> }[], label: string, coalesce?: string, record = true) => {
     if (!studio || changes.length === 0) return
+    if (record) {
+      for (const { id, patch } of changes) {
+        const cur = studio.regions[id]
+        if (!cur) continue
+        const before: Record<string, unknown> = {}
+        // A fade curve that was never set means linear (the stored value can't be undefined).
+        for (const k of Object.keys(patch) as (keyof StudioRegion)[]) before[k] = cur[k] === undefined ? 'linear' : structuredClone(cur[k])
+        const stack = clipHistory.current.get(id) ?? []
+        stack.push(before as Partial<StudioRegion>)
+        if (stack.length > 10) stack.shift()
+        clipHistory.current.set(id, stack)
+      }
+      bumpHistory((n) => n + 1)
+    }
     updateRegions(projectId, studio.id, changes, label, coalesce).catch((err) => notify((err as Error).message, true))
   }
   const onTrackChange = (track: StudioTrack, patch: Partial<StudioTrack>, label: string) => {
@@ -1141,6 +1164,8 @@ export function StudioView({
                 onTrackAutomation={(track, param, points, label) => setTrackAutomation(projectId, studio.id, track, param, { points, shown: true }, label)}
                 onHideLane={(track, param) => setTrackAutomation(projectId, studio.id, track, param, { shown: false }, '隱藏自動化軌')}
                 headerWidth={headerW}
+                canUndoRegion={(id) => (clipHistory.current.get(id)?.length ?? 0) > 0}
+                onUndoRegion={undoClip}
                 corner={
                   folded ? (
                     <button type="button" onClick={() => setTrackDrawer(true)} className="flex h-full w-full items-center justify-center text-base" aria-label="開啟音軌列表" data-track-drawer-open>
