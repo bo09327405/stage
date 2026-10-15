@@ -884,7 +884,7 @@ export function StudioView({
       {/* Safe-area padding keeps the buttons clear of the notch / Dynamic Island / status bar (and rounded corners in landscape);
           on phones the tab strip drops to its own row so nothing is pushed off-screen. */}
       <header
-        className="relative z-40 flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line bg-panel/80 pt-[calc(0.375rem+env(safe-area-inset-top,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] pb-1.5 pl-[max(0.75rem,env(safe-area-inset-left,0px))] backdrop-blur-xl sm:flex-nowrap"
+        className={`${barHidden && studio ? 'hidden' : ''} relative z-40 flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line bg-panel/80 pt-[calc(0.375rem+env(safe-area-inset-top,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] pb-1.5 pl-[max(0.75rem,env(safe-area-inset-left,0px))] backdrop-blur-xl sm:flex-nowrap`}
         data-studio-header
       >
         <button type="button" onClick={onBack} className="flex min-h-11 items-center sm:min-h-9 rounded-lg px-2 text-sm text-white/60 hover:bg-white/10 hover:text-white" title="回到 Set Cue 控台">
@@ -1038,9 +1038,12 @@ export function StudioView({
       {studio && (
         <>
           {barHidden ? (
-            <div className="flex h-10 items-center gap-2 border-b border-line bg-[#141414] px-3 md:hidden" data-transport-folded>
+            <div className="flex h-10 items-center gap-2 border-b border-line bg-[#141414] pr-[max(0.75rem,env(safe-area-inset-right,0px))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] md:hidden" style={{ boxSizing: 'content-box', paddingTop: 'env(safe-area-inset-top, 0px)' }} data-transport-folded>
+              <button type="button" onClick={onBack} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/10 text-lg" aria-label="返回">
+                ‹
+              </button>
               <button type="button" onClick={() => setBar(false)} className="flex h-9 items-center gap-1 rounded-lg bg-white/10 px-3 text-xs font-semibold" aria-expanded="false" aria-label="展開控台" data-transport-toggle>
-                ▼ 展開控台
+                ▼ 展開
               </button>
               <button
                 type="button"
