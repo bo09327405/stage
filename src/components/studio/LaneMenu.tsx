@@ -28,7 +28,7 @@ export function LaneMenu({ x, y, time, trackName, onUpload, onSeek, onClose }: {
   return createPortal(
     <div
       ref={box}
-      className="fixed z-[90] w-64 rounded-xl border border-white/10 bg-[#202020]/95 p-1 text-white shadow-2xl backdrop-blur-xl"
+      data-sheet-menu className="fixed z-[90] w-64 rounded-xl border border-white/10 bg-[#202020]/95 p-1 text-white shadow-2xl backdrop-blur-xl"
       style={{ left: Math.min(x, window.innerWidth - 264), top: Math.min(y, window.innerHeight - 120) }}
       role="menu"
       aria-label="音軌選單"

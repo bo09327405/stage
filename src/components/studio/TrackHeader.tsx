@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { dbLabel } from '../../studio/format'
 import { PARAM_INFO, TRACK_PARAMS, type StudioTrack, type TrackParam } from '../../types/studio'
@@ -24,7 +24,7 @@ export function TrackHeader({
   const panAutomated = !!track.automation.pan?.points.length
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(track.name)
-  const toggle = 'flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold transition'
+  const toggle = 'flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold transition pointer-coarse:h-11 pointer-coarse:w-11 pointer-coarse:rounded-lg pointer-coarse:text-sm'
 
   return (
     <div className="flex h-full flex-col justify-between gap-1 py-1.5 pr-2 pl-3" data-track-header={track.id}>
@@ -65,7 +65,7 @@ export function TrackHeader({
         <button
           type="button"
           onClick={() => confirm(`刪除音軌「${track.name}」與其中所有片段？`) && onRemove()}
-          className="h-6 w-6 shrink-0 rounded text-xs text-white/30 hover:bg-panic/20 hover:text-panic"
+          className="h-6 w-6 shrink-0 rounded text-xs text-white/30 hover:bg-panic/20 hover:text-panic pointer-coarse:h-9 pointer-coarse:w-9"
           aria-label={`刪除音軌 ${track.name}`}
         >
           ✕
@@ -74,6 +74,7 @@ export function TrackHeader({
       <div className="flex items-center gap-1">
         <button
           type="button"
+          data-haptic="tap"
           onClick={() => onChange({ mute: !track.mute }, track.mute ? '取消靜音音軌' : '靜音音軌')}
           aria-pressed={track.mute}
           className={`${toggle} ${track.mute ? 'bg-standby text-black' : 'bg-white/[0.07] text-white/55 hover:bg-white/15'}`}
@@ -83,6 +84,7 @@ export function TrackHeader({
         </button>
         <button
           type="button"
+          data-haptic="tap"
           onClick={() => onChange({ solo: !track.solo }, track.solo ? '取消 Solo' : 'Solo 音軌')}
           aria-pressed={track.solo}
           className={`${toggle} ${track.solo ? 'bg-accent text-white' : 'bg-white/[0.07] text-white/55 hover:bg-white/15'}`}
@@ -92,6 +94,7 @@ export function TrackHeader({
         </button>
         <button
           type="button"
+          data-haptic="tap"
           onClick={onArm}
           aria-pressed={armed}
           className={`${toggle} ${armed ? 'bg-panic text-white' : 'bg-white/[0.07] text-panic/70 hover:bg-white/15'}`}
@@ -107,7 +110,7 @@ export function TrackHeader({
             setAutoMenu(autoMenu ? null : { x: r.left, y: r.bottom + 4 })
           }}
           aria-expanded={!!autoMenu}
-          className={`ml-1 h-6 rounded px-1.5 text-[10px] font-semibold ${TRACK_PARAMS.some((p) => track.automation[p]?.shown) ? 'bg-[#da77f2]/20 text-[#e9b8ff]' : 'bg-white/[0.07] text-white/55 hover:bg-white/15'}`}
+          className={`ml-1 h-6 rounded px-1.5 text-[10px] font-semibold pointer-coarse:h-11 pointer-coarse:px-2.5 pointer-coarse:text-xs ${TRACK_PARAMS.some((p) => track.automation[p]?.shown) ? 'bg-[#da77f2]/20 text-[#e9b8ff]' : 'bg-white/[0.07] text-white/55 hover:bg-white/15'}`}
           title="音軌自動化：Volume / Pan / Filter"
           data-automation-menu={track.id}
         >
@@ -116,31 +119,35 @@ export function TrackHeader({
         <span className="ml-auto font-mono text-[10px] text-white/40 tabular">{dbLabel(track.volume)}</span>
       </div>
       <div className="flex items-center gap-2">
-        <input
-          type="range"
-          min={0}
-          max={1.5}
-          step={0.01}
-          value={track.volume}
-          onChange={(e) => onChange({ volume: Number(e.target.value) }, `音軌「${track.name}」音量`)}
-          onDoubleClick={() => onChange({ volume: 1 }, `音軌「${track.name}」音量`)}
-          className="h-1 min-w-0 flex-1 accent-[#30d158]"
-          aria-label={`${track.name} 音量`}
-          title="音量（雙擊回到 0 dB）"
-        />
-        <input
-          type="range"
-          min={-1}
-          max={1}
-          step={0.02}
-          value={track.pan}
-          disabled={panAutomated}
-          onChange={(e) => onChange({ pan: Number(e.target.value) }, `音軌「${track.name}」聲相`)}
-          onDoubleClick={() => onChange({ pan: 0 }, `音軌「${track.name}」聲相`)}
-          className="h-1 w-14 accent-[#0a84ff]"
-          aria-label={`${track.name} 聲相`}
-          title={panAutomated ? '聲相由自動化控制' : `聲相 ${track.pan === 0 ? 'C' : track.pan < 0 ? `L${Math.round(-track.pan * 100)}` : `R${Math.round(track.pan * 100)}`}（雙擊置中）`}
-        />
+        <HeldRange tip={dbLabel(track.volume)} className="min-w-0 flex-1">
+          <input
+            type="range"
+            min={0}
+            max={1.5}
+            step={0.01}
+            value={track.volume}
+            onChange={(e) => onChange({ volume: Number(e.target.value) }, `音軌「${track.name}」音量`)}
+            onDoubleClick={() => onChange({ volume: 1 }, `音軌「${track.name}」音量`)}
+            className="h-1 w-full accent-[#30d158] pointer-coarse:h-11"
+            aria-label={`${track.name} 音量`}
+            title="音量（雙擊回到 0 dB）"
+          />
+        </HeldRange>
+        <HeldRange tip={track.pan === 0 ? 'C' : track.pan < 0 ? `L ${Math.round(-track.pan * 100)}%` : `R ${Math.round(track.pan * 100)}%`} className="w-14 pointer-coarse:w-20">
+          <input
+            type="range"
+            min={-1}
+            max={1}
+            step={0.02}
+            value={track.pan}
+            disabled={panAutomated}
+            onChange={(e) => onChange({ pan: Number(e.target.value) }, `音軌「${track.name}」聲相`)}
+            onDoubleClick={() => onChange({ pan: 0 }, `音軌「${track.name}」聲相`)}
+            className="h-1 w-full accent-[#0a84ff] pointer-coarse:h-11"
+            aria-label={`${track.name} 聲相`}
+            title={panAutomated ? '聲相由自動化控制' : '聲相（雙擊置中）'}
+          />
+        </HeldRange>
       </div>
       {autoMenu && (
         <AutomationMenu
@@ -174,7 +181,7 @@ function AutomationMenu({ track, x, y, onPick, onClose }: { track: StudioTrack; 
   return createPortal(
     <div
       ref={box}
-      className="fixed z-[90] w-56 rounded-xl border border-white/10 bg-[#202020]/95 p-1 shadow-2xl backdrop-blur-xl"
+      data-sheet-menu className="fixed z-[90] w-56 rounded-xl border border-white/10 bg-[#202020]/95 p-1 shadow-2xl backdrop-blur-xl"
       style={{ left: Math.min(x, window.innerWidth - 232), top: Math.min(y, window.innerHeight - 180) }}
       role="menu"
       aria-label="自動化參數"
@@ -202,5 +209,30 @@ function AutomationMenu({ track, x, y, onPick, onClose }: { track: StudioTrack; 
       })}
     </div>,
     document.body,
+  )
+}
+
+/** Wraps a range slider: while a finger (or mouse) holds it, the value floats above it in large type. */
+function HeldRange({ tip, className = '', children }: { tip: string; className?: string; children: ReactNode }) {
+  const [held, setHeld] = useState(false)
+  useEffect(() => {
+    if (!held) return
+    const up = () => setHeld(false)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+    return () => {
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+    }
+  }, [held])
+  return (
+    <div className={`relative ${className}`} onPointerDown={() => setHeld(true)}>
+      {held && (
+        <span className="pointer-events-none absolute -top-9 left-1/2 z-30 -translate-x-1/2 rounded-md bg-black/90 px-2.5 py-1 font-mono text-sm font-semibold whitespace-nowrap text-white shadow-lg ring-1 ring-white/20 pointer-coarse:-top-14 pointer-coarse:text-xl" data-fader-tip>
+          {tip}
+        </span>
+      )}
+      {children}
+    </div>
   )
 }

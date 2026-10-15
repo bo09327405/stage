@@ -56,7 +56,7 @@ export function AutomationNodeMenu({ x, y, node, onEdit, onDelete, onClose }: { 
   return createPortal(
     <div
       ref={box}
-      className="fixed z-[200] w-56 rounded-xl border border-white/10 bg-[#202020]/95 p-1 text-white shadow-2xl backdrop-blur-xl"
+      data-sheet-menu className="fixed z-[200] w-56 rounded-xl border border-white/10 bg-[#202020]/95 p-1 text-white shadow-2xl backdrop-blur-xl"
       style={pos}
       role="menu"
       aria-label="自動化節點"

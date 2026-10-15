@@ -523,6 +523,7 @@ export function StudioView({
     if (a === 'split') {
       // Selected regions under the playhead; with none selected, everything under it on the selected track.
       const targets = (sel.length ? sel : Object.values(studio.regions).filter((r) => r.trackId === trackForInsert)).filter((r) => playhead > r.start && playhead < r.start + r.duration)
+      navigator.vibrate?.(10)
       const n = await splitRegions(projectId, studio, targets.map((r) => r.id), playhead)
       if (!n) notify('播放頭沒有落在選取的片段上')
       return
@@ -1118,7 +1119,7 @@ export function StudioView({
             </div>
             {sideOpen && <div className="fixed inset-0 z-[55] bg-black/50 lg:hidden" onClick={() => setSideOpen(false)} aria-hidden data-side-backdrop />}
             <div
-              className={`fixed inset-y-0 right-0 z-[60] flex w-[min(340px,88vw)] flex-col lg:block bg-[#151515] pt-[env(safe-area-inset-top,0px)] pr-[env(safe-area-inset-right,0px)] pb-[env(safe-area-inset-bottom,0px)] shadow-2xl transition-[transform,visibility] duration-200 lg:static lg:z-auto lg:w-[320px] lg:shrink-0 lg:translate-x-0 lg:p-0 lg:shadow-none ${sideOpen ? 'translate-x-0' : 'invisible translate-x-full lg:visible'}`}
+              className={`fixed inset-y-0 right-0 z-[60] flex w-[min(340px,88vw)] flex-col max-sm:inset-x-0 max-sm:top-auto max-sm:bottom-0 max-sm:h-[85dvh] max-sm:w-full max-sm:rounded-t-2xl lg:block bg-[#151515] pt-[env(safe-area-inset-top,0px)] pr-[env(safe-area-inset-right,0px)] pb-[env(safe-area-inset-bottom,0px)] shadow-2xl transition-[transform,visibility] duration-200 lg:static lg:z-auto lg:w-[320px] lg:shrink-0 lg:translate-x-0 lg:p-0 lg:shadow-none ${sideOpen ? 'translate-x-0' : 'invisible translate-x-full lg:visible'}`}
               data-side-drawer
               data-open={sideOpen}
             >
@@ -1350,7 +1351,7 @@ function OpenStudioMenu({ x, y, studios, onOpen, onClose }: { x: number; y: numb
     return () => window.removeEventListener('pointerdown', down, true)
   }, [onClose])
   return createPortal(
-    <div ref={box} className="fixed z-[90] w-64 rounded-xl border border-white/10 bg-[#202020] p-1 shadow-2xl" style={{ left: Math.min(x, window.innerWidth - 264), top: y }} role="menu" data-studio-open-list>
+    <div ref={box} data-sheet-menu className="fixed z-[90] w-64 rounded-xl border border-white/10 bg-[#202020] p-1 shadow-2xl" style={{ left: Math.min(x, window.innerWidth - 264), top: y }} role="menu" data-studio-open-list>
       <div className="px-3 pt-1 pb-1.5 text-[11px] text-white/40">開啟 Studio 專案</div>
       {studios.map((s) => (
         <button key={s.id} type="button" onClick={() => onOpen(s.id)} className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs text-white/80 hover:bg-white/10" data-open-studio-item={s.id}>
@@ -1394,7 +1395,7 @@ function ProjectMenu({ x, y, hasStudio, onAction, onClose }: { x: number; y: num
     </button>
   )
   return createPortal(
-    <div ref={box} className="fixed z-[90] w-72 rounded-xl border border-white/10 bg-[#202020]/95 p-1 shadow-2xl backdrop-blur-xl" style={{ left: Math.max(8, x - 288), top: y }} role="menu" aria-label="專案檔案" data-project-menu-list>
+    <div ref={box} data-sheet-menu className="fixed z-[90] w-72 rounded-xl border border-white/10 bg-[#202020]/95 p-1 shadow-2xl backdrop-blur-xl" style={{ left: Math.max(8, x - 288), top: y }} role="menu" aria-label="專案檔案" data-project-menu-list>
       {item('saveVersion', '💾 立即存檔（⌘S）', '存成一個手動版本，不會被自動合併')}
       {item('history', '🕘 版本歷史…', '最近 15 個版本：預覽、還原、返回最新')}
       <div className="my-1 h-px bg-white/10" />

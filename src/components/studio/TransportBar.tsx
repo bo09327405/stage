@@ -44,10 +44,10 @@ export function TransportBar({
   /** The master section (fader, meters, MUTE / DIM). */
   master?: ReactNode
 }) {
-  const btn = 'flex h-10 w-10 items-center justify-center rounded-lg text-lg transition'
+  const btn = 'flex h-10 w-10 items-center justify-center rounded-lg text-lg transition pointer-coarse:h-12 pointer-coarse:w-12'
   const meter = Math.min(1, recording ? recording.level : level)
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-line bg-[#141414] px-3 py-2" data-transport>
+    <div className="flex items-center gap-2 overflow-x-auto border-b border-line bg-[#141414] px-3 py-2 no-scrollbar max-sm:[&>*]:shrink-0 sm:flex-wrap sm:overflow-visible" data-transport>
       <button type="button" onClick={onRewind} className={`${btn} bg-white/[0.06] text-white/70 hover:bg-white/12`} aria-label="回到開頭" title="回到開頭（Home）">
         ⏮
       </button>
@@ -108,7 +108,7 @@ export function TransportBar({
           type="button"
           onClick={onInput}
           aria-pressed={inputOpen}
-          className={`h-9 rounded-lg px-3 text-xs font-semibold ${inputOpen ? 'bg-panic/80 text-white' : 'bg-white/[0.06] text-white/70 hover:bg-white/12'}`}
+          className={`h-9 pointer-coarse:h-11 rounded-lg px-3 text-xs font-semibold ${inputOpen ? 'bg-panic/80 text-white' : 'bg-white/[0.06] text-white/70 hover:bg-white/12'}`}
           title="麥克風與輸入設定：裝置、電平、校準、監聽、預設集、降噪、修音"
           data-input-toggle
         >
@@ -118,7 +118,7 @@ export function TransportBar({
           type="button"
           onClick={onAutomation}
           aria-pressed={automationMode}
-          className={`h-9 rounded-lg px-3 text-xs font-semibold ${automationMode ? 'bg-standby text-black' : 'bg-white/[0.06] text-white/70 hover:bg-white/12'}`}
+          className={`h-9 pointer-coarse:h-11 rounded-lg px-3 text-xs font-semibold ${automationMode ? 'bg-standby text-black' : 'bg-white/[0.06] text-white/70 hover:bg-white/12'}`}
           title="音量自動化：點片段新增節點、拖曳節點、雙擊刪除（A）"
           data-automation-toggle
         >
@@ -126,9 +126,10 @@ export function TransportBar({
         </button>
         <button
           type="button"
+          data-haptic="tap"
           onClick={onSnap}
           aria-pressed={snap}
-          className={`h-9 rounded-lg px-3 text-xs ${snap ? 'bg-white/12 text-white' : 'bg-white/[0.05] text-white/45'}`}
+          className={`h-9 pointer-coarse:h-11 rounded-lg px-3 text-xs ${snap ? 'bg-white/12 text-white' : 'bg-white/[0.05] text-white/45'}`}
           title="吸附：對齊格線、播放頭與其他片段邊緣"
         >
           ⌗ 吸附

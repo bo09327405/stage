@@ -712,7 +712,7 @@ function PopMenu({ x, y, label, onClose, children }: { x: number; y: number; lab
   return createPortal(
     <div
       ref={box}
-      className="fixed z-[95] rounded-xl border border-white/10 bg-[#202020]/95 p-1 text-white shadow-2xl backdrop-blur-xl"
+      data-sheet-menu className="fixed z-[95] rounded-xl border border-white/10 bg-[#202020]/95 p-1 text-white shadow-2xl backdrop-blur-xl"
       style={{ width, left: Math.max(8, Math.min(x, window.innerWidth - width - 8)), top: Math.max(8, Math.min(y, window.innerHeight - 260)) }}
       role="menu"
       aria-label={label}

@@ -87,7 +87,7 @@ export function RegionMenu({
   return createPortal(
     <div
       ref={box}
-      className="fixed z-[90] w-60 rounded-xl border border-white/10 bg-[#202020]/95 p-1 shadow-2xl backdrop-blur-xl"
+      data-sheet-menu className="fixed z-[90] w-60 rounded-xl border border-white/10 bg-[#202020]/95 p-1 shadow-2xl backdrop-blur-xl"
       style={pos}
       role="menu"
       aria-label="片段選單"

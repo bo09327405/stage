@@ -279,3 +279,32 @@ aside[aria-label='控台側欄'] {
     scroll-behavior: auto !important;
   }
 }
+
+/* Studio pop-up menus (right-click / long-press) become bottom sheets on phones: big rows, thumb reach. */
+@media (max-width: 639px) {
+  [data-sheet-menu] {
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: 70dvh;
+    overflow-y: auto;
+    border-radius: 16px 16px 0 0 !important;
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -12px 40px rgb(0 0 0 / 0.6);
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  [data-sheet-menu] :is(button, [role='menuitem'], label) {
+    min-height: 48px;
+    font-size: 15px;
+  }
+}
+/* Timeline and track editing: a finger on a region / handle never pans or bounces the page. */
+[data-studio] [data-trim],
+[data-studio] [data-fade],
+[data-studio] [data-track-header] input[type='range'] {
+  touch-action: none;
+}

@@ -398,7 +398,7 @@ function TabMenu({
   return createPortal(
     <div
       ref={box}
-      className="fixed z-[95] rounded-xl border border-white/10 bg-[#202020]/95 p-1 text-white shadow-2xl backdrop-blur-xl"
+      data-sheet-menu className="fixed z-[95] rounded-xl border border-white/10 bg-[#202020]/95 p-1 text-white shadow-2xl backdrop-blur-xl"
       style={{ width, left: Math.max(8, Math.min(menu.x, window.innerWidth - width - 8)), top: Math.max(8, Math.min(menu.y, window.innerHeight - 340)) }}
       role="menu"
       aria-label={`分頁「${name}」`}

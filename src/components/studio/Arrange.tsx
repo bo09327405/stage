@@ -23,7 +23,8 @@ import {
 } from '../../types/studio'
 
 export const HEADER_W = 232
-export const LANE_H = 92
+/** Touch screens get taller lanes: the track header needs 44 px mute / solo / fader targets. */
+export const LANE_H = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? 132 : 92
 const RULER_H = 30
 const SECTION_H = 26
 /** Height of a track automation lane. */
@@ -1100,17 +1101,17 @@ function Region({
 
       {!automationMode && (
         <>
-          <div className="absolute inset-y-0 left-0 z-[7] w-1.5 cursor-ew-resize hover:bg-white/40" onPointerDown={(e) => onEdgeStart(e, 'trim-l')} data-trim="l" />
-          <div className="absolute inset-y-0 right-0 z-[7] w-1.5 cursor-ew-resize hover:bg-white/40" onPointerDown={(e) => onEdgeStart(e, 'trim-r')} data-trim="r" />
+          <div className="absolute inset-y-0 left-0 z-[7] w-1.5 cursor-ew-resize hover:bg-white/40 pointer-coarse:w-6 pointer-coarse:bg-white/25" onPointerDown={(e) => onEdgeStart(e, 'trim-l')} data-trim="l" />
+          <div className="absolute inset-y-0 right-0 z-[7] w-1.5 cursor-ew-resize hover:bg-white/40 pointer-coarse:w-6 pointer-coarse:bg-white/25" onPointerDown={(e) => onEdgeStart(e, 'trim-r')} data-trim="r" />
           <div
-            className="absolute top-4 z-[8] h-2.5 w-2.5 -translate-x-1/2 cursor-ew-resize rounded-sm border border-black bg-white opacity-0 group-hover:opacity-100"
+            className="absolute top-4 z-[8] h-2.5 w-2.5 -translate-x-1/2 cursor-ew-resize rounded-sm border border-black bg-white opacity-0 group-hover:opacity-100 pointer-coarse:top-2 pointer-coarse:h-7 pointer-coarse:w-7 pointer-coarse:rounded-full pointer-coarse:opacity-100"
             style={{ left: Math.max(5, r.fadeIn * zoom) }}
             onPointerDown={(e) => onEdgeStart(e, 'fade-in')}
             title="拖曳設定淡入"
             data-fade="in"
           />
           <div
-            className="absolute top-4 z-[8] h-2.5 w-2.5 translate-x-1/2 cursor-ew-resize rounded-sm border border-black bg-white opacity-0 group-hover:opacity-100"
+            className="absolute top-4 z-[8] h-2.5 w-2.5 translate-x-1/2 cursor-ew-resize rounded-sm border border-black bg-white opacity-0 group-hover:opacity-100 pointer-coarse:top-2 pointer-coarse:h-7 pointer-coarse:w-7 pointer-coarse:rounded-full pointer-coarse:opacity-100"
             style={{ right: Math.max(5, r.fadeOut * zoom) }}
             onPointerDown={(e) => onEdgeStart(e, 'fade-out')}
             title="拖曳設定淡出"

@@ -32,7 +32,7 @@ export function SectionMenu({ section, x, y, onAction, onClose }: { section: Stu
   const row = 'flex w-full items-center rounded-md px-3 py-1.5 text-left text-[13px] text-white/85 hover:bg-white/10'
 
   return createPortal(
-    <div ref={box} className="fixed z-[90] w-60 space-y-1 rounded-xl border border-white/10 bg-[#202020]/95 p-1.5 shadow-2xl backdrop-blur-xl" style={pos} role="menu" aria-label="區段選單" onContextMenu={(e) => e.preventDefault()} data-section-menu>
+    <div ref={box} data-sheet-menu className="fixed z-[90] w-60 space-y-1 rounded-xl border border-white/10 bg-[#202020]/95 p-1.5 shadow-2xl backdrop-blur-xl" style={pos} role="menu" aria-label="區段選單" onContextMenu={(e) => e.preventDefault()} data-section-menu>
       <form
         className="flex gap-1 p-1"
         onSubmit={(e) => {
