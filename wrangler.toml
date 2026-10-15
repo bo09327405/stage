@@ -9,4 +9,5 @@ bucket_name = "115pa"
 [vars]
 DATABASE_URL = "https://performingarts-adb73-default-rtdb.firebaseio.com"
 CLOUDINARY_CLOUD = "j2w2qgzs"
+TTS_DAILY_CHARS = "30000"
 ALLOWED_ORIGINS = "https://bo09327405.github.io,https://localhost:5174,https://localhost:5173"
