@@ -437,7 +437,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
           {(error || cueListError) && (
             <span className="truncate text-xs text-panic">{(error ?? cueListError)!.message}</span>
           )}
-          <span className="ml-auto hidden text-[11px] text-white/30 xl:block">
+          <span className="ml-auto hidden text-[11px] text-white/30 lg:block">
             ⌘Z 復原 · Space GO/Resume · P Pause · ↑↓ Standby · Esc Fade All · D DIM · M Mute · 1–8 Hits
           </span>
           <span className="font-mono text-sm text-white/70 tabular">{clock}</span>

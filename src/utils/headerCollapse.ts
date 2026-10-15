@@ -8,15 +8,16 @@ import { useEffect, useRef, useState } from 'react'
  */
 
 const KEY = 'theatre.surface.headerCollapsed'
-type Pref = { fs: boolean; win: boolean }
+type Pref = { fs: boolean; win: boolean; app: boolean }
 
 function read(): Pref {
   try {
     const r = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<Pref> | null
     // Full screen folds the bar by default: that's what it's for.
-    return { fs: r?.fs !== false, win: r?.win === true }
+    // The home-screen app starts with the bar showing (folded only if the user folded it there).
+    return { fs: r?.fs !== false, win: r?.win === true, app: r?.app === true }
   } catch {
-    return { fs: true, win: false }
+    return { fs: true, win: false, app: false }
   }
 }
 
@@ -28,13 +29,14 @@ export function useHeaderCollapse(isFullscreen: boolean) {
   const [pref, setPref] = useState(read)
   const [peek, setPeek] = useState(false)
   const immersive = isFullscreen || standalone()
-  const collapsed = immersive ? pref.fs : pref.win
+  const homeApp = !isFullscreen && standalone()
+  const collapsed = homeApp ? pref.app : immersive ? pref.fs : pref.win
   const hideTimer = useRef(0)
 
   const setCollapsed = (value: boolean) => {
     setPeek(false)
     setPref((p) => {
-      const next = immersive ? { ...p, fs: value } : { ...p, win: value }
+      const next = homeApp ? { ...p, app: value } : immersive ? { ...p, fs: value } : { ...p, win: value }
       try {
         localStorage.setItem(KEY, JSON.stringify(next))
       } catch {

@@ -1,4 +1,4 @@
-import { get, ref } from 'firebase/database'
+import { get, ref, remove, serverTimestamp, set } from 'firebase/database'
 import { db } from './services/firebase'
 import { useEffect, useState } from 'react'
 import { AudienceView } from './components/audience/AudienceView'
@@ -40,9 +40,65 @@ const isSurface = /\/(surface|control-panel)$/.test(window.location.pathname.rep
 const isConsole = initialParams.get('role') === 'console'
 const isStudio = initialParams.get('role') === 'studio'
 
-/** URL-backed navigation for the console and surface apps (keeps the current path and role). */
-function useShowRoute() {
+const isStandalone = () => window.matchMedia?.('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true
+const lastShowKey = (role: string) => `theatre.lastShow.${role}`
+
+/**
+ * URL-backed navigation for the console and surface apps (keeps the current path and role).
+ *
+ * The last project / version opened is remembered per role — on this device and in the signed-in
+ * user's own record (users/{uid}/lastShow/{role}), so a home-screen app, which opens without any
+ * ?project=… in its address, comes back to what was last open on any of their devices.
+ */
+function useShowRoute(uid?: string) {
   const [show, setShow] = useState(() => readShow(new URLSearchParams(window.location.search)))
+  const role = new URLSearchParams(window.location.search).get('role') ?? 'console'
+
+  // Remember what's open (and forget it when the user goes back to the hub on purpose).
+  useEffect(() => {
+    if (!uid) return
+    try {
+      if (show) localStorage.setItem(lastShowKey(role), JSON.stringify(show))
+    } catch {
+      /* storage unavailable */
+    }
+    if (show) set(ref(db, `users/${uid}/lastShow/${role}`), { ...show, at: serverTimestamp() }).catch(() => {})
+  }, [show, uid, role])
+
+  // Home-screen app launched without a project: go back to the last one (this runs once per launch).
+  useEffect(() => {
+    if (!uid || show || !isStandalone() || new URLSearchParams(window.location.search).has('home')) return
+    let alive = true
+    const open = (s: Partial<ShowRef> | null) => {
+      if (!alive || !s?.projectId || !s.versionId) return
+      const params = new URLSearchParams(window.location.search)
+      params.set('project', s.projectId)
+      params.set('version', s.versionId)
+      window.history.replaceState(null, '', `${window.location.pathname}?${params}`)
+      setShow({ projectId: s.projectId, versionId: s.versionId })
+    }
+    get(ref(db, `users/${uid}/lastShow/${role}`)).then(
+      (snap) => {
+        if (snap.exists()) return open(snap.val() as ShowRef)
+        try {
+          open(JSON.parse(localStorage.getItem(lastShowKey(role)) ?? 'null') as ShowRef | null)
+        } catch {
+          /* nothing remembered */
+        }
+      },
+      () => {
+        try {
+          open(JSON.parse(localStorage.getItem(lastShowKey(role)) ?? 'null') as ShowRef | null)
+        } catch {
+          /* offline and nothing remembered */
+        }
+      },
+    )
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid])
 
   useEffect(() => {
     const onPop = () => setShow(readShow(new URLSearchParams(window.location.search)))
@@ -73,6 +129,16 @@ function useShowRoute() {
     const params = new URLSearchParams()
     const role = new URLSearchParams(window.location.search).get('role')
     if (role) params.set('role', role)
+    if (!next && uid) {
+      // Back to the hub on purpose: don't reopen the old show on the next launch, and don't restore it right now.
+      try {
+        localStorage.removeItem(lastShowKey(role ?? 'console'))
+      } catch {
+        /* ignore */
+      }
+      remove(ref(db, `users/${uid}/lastShow/${role ?? 'console'}`)).catch(() => {})
+      params.set('home', '1')
+    }
     if (next) {
       params.set('project', next.projectId)
       params.set('version', next.versionId)
@@ -169,7 +235,7 @@ function RequireLogin({ children }: { children: (user: AppUser) => React.ReactNo
 }
 
 function ConsoleApp({ user }: { user: AppUser }) {
-  const [show, navigate] = useShowRoute()
+  const [show, navigate] = useShowRoute(user.uid)
   if (!show) return <Hub user={user} onOpenSetCue={navigate} />
   return (
     <ProjectGate key={show.projectId} user={user} projectId={show.projectId} onBack={() => navigate(null)}>
@@ -198,7 +264,7 @@ function ConsoleShow({ user, show, navigate }: { user: AppUser; show: ShowRef; n
 }
 
 function SurfaceApp({ user }: { user: AppUser }) {
-  const [show, navigate] = useShowRoute()
+  const [show, navigate] = useShowRoute(user.uid)
   if (!show) return <Hub user={user} onOpenSetCue={navigate} />
   return (
     <ProjectGate key={show.projectId} user={user} projectId={show.projectId} onBack={() => navigate(null)}>
@@ -233,7 +299,7 @@ function SurfaceShow({ user, show, navigate }: { user: AppUser; show: ShowRef; n
 }
 
 function StudioApp({ user }: { user: AppUser }) {
-  const [show, navigate] = useShowRoute()
+  const [show, navigate] = useShowRoute(user.uid)
   if (!show) return <Hub user={user} onOpenSetCue={(s) => (location.href = `${location.pathname}?role=console&project=${s.projectId}&version=${s.versionId}`)} />
   return (
     <ProjectGate key={show.projectId} user={user} projectId={show.projectId} onBack={() => navigate(null)}>
