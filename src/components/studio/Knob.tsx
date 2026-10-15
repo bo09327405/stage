@@ -107,7 +107,13 @@ export function Knob({
   const [px, py] = point(now)
 
   return (
-    <div className="flex w-[76px] flex-col items-center gap-1 select-none" data-knob={label}>
+    <div className="relative flex w-[76px] flex-col items-center gap-1 select-none" data-knob={label}>
+      {/* A finger covers the readout below, so the value also floats above the knob while it is held. */}
+      {local !== null && (
+        <span className="pointer-events-none absolute -top-8 left-1/2 z-30 -translate-x-1/2 rounded-md bg-black/90 px-2 py-0.5 font-mono text-xs whitespace-nowrap text-white shadow-lg ring-1 ring-white/20 pointer-coarse:-top-12 pointer-coarse:text-base" data-knob-tip>
+          {format(shown)}
+        </span>
+      )}
       <div
         ref={box}
         role="slider"

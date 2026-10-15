@@ -25,6 +25,9 @@ const writeStored = (key: string, value: string) => {
   }
 }
 
+/** Below lg the side panel is a bottom sheet (slides up) so the cue list keeps the middle of the screen. */
+const narrow = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches
+
 /**
  * The control surface docked beside the Set Cue editor (split view on wide screens, a full
  * overlay on narrow ones). It renders the same SurfaceWorkspace as the /surface page but drives
@@ -72,12 +75,12 @@ export function ControlSidebar({
 
   return (
     <motion.aside
-      initial={{ x: 60, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      exit={{ x: 60, opacity: 0, transition: { duration: 0.18 } }}
+      initial={narrow() ? { y: 80, opacity: 0 } : { x: 60, opacity: 0 }}
+      animate={{ x: 0, y: 0, opacity: 1 }}
+      exit={narrow() ? { y: 80, opacity: 0, transition: { duration: 0.18 } } : { x: 60, opacity: 0, transition: { duration: 0.18 } }}
       transition={{ type: 'spring', stiffness: 420, damping: 38 }}
       style={{ '--sidebar-w': `${width}px` } as React.CSSProperties}
-      data-safe-fixed className="fixed inset-y-0 right-0 z-50 w-full border-l border-line bg-ink shadow-2xl lg:relative lg:inset-auto lg:z-auto lg:w-[var(--sidebar-w)] lg:shrink-0 lg:shadow-none"
+      data-safe-fixed className="fixed inset-y-0 right-0 z-50 w-full border-l border-line bg-ink shadow-2xl max-lg:inset-x-0 max-lg:top-[8dvh] max-lg:bottom-0 max-lg:h-auto max-lg:rounded-t-2xl max-lg:border-t max-lg:border-l-0 lg:relative lg:inset-auto lg:z-auto lg:w-[var(--sidebar-w)] lg:shrink-0 lg:shadow-none"
       aria-label="控台側欄"
     >
       <div

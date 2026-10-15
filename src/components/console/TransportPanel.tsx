@@ -78,7 +78,7 @@ export function TransportPanel({
   return (
     <div className="flex flex-col gap-3 p-4">
       {/* GO / RESUME */}
-      <motion.button
+      <motion.button data-haptic="strong"
         onClick={paused ? onResume : onGo}
         disabled={!primaryEnabled}
         whileTap={primaryEnabled ? { scale: 0.97 } : undefined}
@@ -133,7 +133,7 @@ export function TransportPanel({
       </motion.button>
 
       {/* PAUSE / STOP */}
-      <motion.button
+      <motion.button data-haptic="tap"
         onClick={paused ? onStop : onPause}
         disabled={!secondaryEnabled}
         whileTap={secondaryEnabled ? { scale: 0.97 } : undefined}
@@ -212,6 +212,7 @@ export function TransportPanel({
             inactiveClassName="bg-white/[0.06] text-white/70 hover:bg-white/10"
           />
           <button
+            data-haptic="tap"
             onClick={() => onMute(!muted)}
             className={`min-h-11 rounded-xl text-sm font-bold tracking-widest transition ${
               muted ? 'bg-panic text-white shadow-[0_0_24px_-6px_rgba(255,69,58,0.7)]' : 'bg-white/[0.06] text-white/70 hover:bg-white/10'
@@ -224,6 +225,7 @@ export function TransportPanel({
 
       {/* Fade everything out (unavailable while paused: time is frozen) */}
       <button
+        data-haptic="tap"
         onClick={onStopAll}
         disabled={playbackState !== 'playing'}
         className="min-h-12 rounded-xl bg-white/[0.06] text-sm font-semibold text-white/80 transition hover:bg-white/10 disabled:opacity-30"

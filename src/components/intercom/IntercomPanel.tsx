@@ -13,6 +13,9 @@ type Intercom = ReturnType<typeof useIntercom>
  * Side drawer: join form, CALL, voice controls, crew list and chat. Rendered into <body> above
  * everything else on the page (top bars, side panels, header pop-ups), over a dimmed backdrop.
  */
+/** Phones get a bottom sheet instead of a side drawer. */
+const phone = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches
+
 export function IntercomPanel({ intercom, onClose }: { intercom: Intercom; onClose: () => void }) {
   const { markRead } = intercom
   // Reading the drawer clears the unread badge, including messages that arrive while it's open.
@@ -45,11 +48,11 @@ export function IntercomPanel({ intercom, onClose }: { intercom: Intercom; onClo
       />
       <motion.aside
         key="intercom-panel"
-        initial={{ x: 40, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        exit={{ x: 40, opacity: 0 }}
+        initial={phone() ? { y: 60, opacity: 0 } : { x: 40, opacity: 0 }}
+        animate={{ x: 0, y: 0, opacity: 1 }}
+        exit={phone() ? { y: 60, opacity: 0 } : { x: 40, opacity: 0 }}
         transition={{ duration: 0.18 }}
-        data-safe-fixed className="fixed inset-y-0 right-0 z-[101] flex w-full max-w-md flex-col border-l border-line bg-panel text-white shadow-2xl"
+        data-safe-fixed className="fixed inset-y-0 right-0 z-[101] flex w-full max-w-md flex-col border-l border-line max-sm:inset-x-0 max-sm:top-auto max-sm:bottom-0 max-sm:h-[88dvh] max-sm:max-w-none max-sm:rounded-t-2xl max-sm:border-t max-sm:border-l-0 bg-panel text-white shadow-2xl"
         role="dialog"
         aria-modal="true"
         aria-label="Intercom"

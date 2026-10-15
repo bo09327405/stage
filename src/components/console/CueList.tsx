@@ -19,6 +19,8 @@ interface CueListProps {
   onCheckedChange: (ids: Set<string>) => void
   onSelect: (cue: Cue) => void
   onStandby: (cue: Cue) => void
+  /** Swipe-left tray: delete this cue (the caller confirms). */
+  onDelete?: (cue: Cue) => void
   onStop: (instanceId: string) => void
   /** Pause / unpause one running cue on its own. */
   onPauseToggle: (instance: ActiveCue) => void
@@ -42,6 +44,7 @@ export function CueList({
   onCheckedChange,
   onSelect,
   onStandby,
+  onDelete,
   onStop,
   onPauseToggle,
   onRenumber,
@@ -137,6 +140,8 @@ export function CueList({
               }}
               onCheck={(range) => toggle(id, range)}
               onStandby={() => onStandby(cue)}
+              onEdit={() => onSelect(cue)}
+              onDelete={onDelete ? () => onDelete(cue) : undefined}
               onStop={onStop}
               onPauseToggle={onPauseToggle}
             />
@@ -160,6 +165,8 @@ function CueRow({
   onRowClick,
   onCheck,
   onStandby,
+  onEdit,
+  onDelete,
   onStop,
   onPauseToggle,
 }: {
@@ -175,11 +182,54 @@ function CueRow({
   onRowClick: (e: ReactMouseEvent) => void
   onCheck: (range: boolean) => void
   onStandby: () => void
+  onEdit: () => void
+  onDelete?: () => void
   onStop: (instanceId: string) => void
   onPauseToggle: (instance: ActiveCue) => void
 }) {
   const controls = useDragControls()
   const press = useRef<{ x: number; y: number; started: boolean } | null>(null)
+
+  // Touch swipe: right = Standby, left = open the Edit / Delete tray. The row keeps vertical
+  // scrolling (touch-action: pan-y); a mostly-horizontal move takes over the gesture.
+  const SWIPE_ACT = 84
+  const TRAY = 148
+  const [dx, setDx] = useState(0)
+  const [tray, setTray] = useState(false)
+  const swipe = useRef<{ x: number; y: number; id: number; active: boolean; base: number } | null>(null)
+  const swallowClick = useRef(false)
+  const onSwipeDown = (e: PointerEvent<HTMLLIElement>) => {
+    if (e.pointerType === 'mouse' || (e.target as HTMLElement).closest?.('button, input, a')) return
+    swipe.current = { x: e.clientX, y: e.clientY, id: e.pointerId, active: false, base: tray ? -TRAY : 0 }
+  }
+  const onSwipeMove = (e: PointerEvent<HTMLLIElement>) => {
+    const s = swipe.current
+    if (!s || s.id !== e.pointerId) return
+    const mx = e.clientX - s.x
+    if (!s.active) {
+      if (Math.abs(mx) < 14 || Math.abs(mx) < Math.abs(e.clientY - s.y) * 1.6) return
+      s.active = true
+      e.currentTarget.setPointerCapture(e.pointerId)
+    }
+    setDx(Math.max(-TRAY - 24, Math.min(SWIPE_ACT + 40, s.base + mx)))
+  }
+  const onSwipeEnd = () => {
+    const s = swipe.current
+    swipe.current = null
+    if (!s?.active) return
+    swallowClick.current = true
+    window.setTimeout(() => (swallowClick.current = false), 80)
+    if (dx > SWIPE_ACT) {
+      navigator.vibrate?.(15)
+      onStandby()
+      setTray(false)
+    } else if (dx < -SWIPE_ACT) {
+      setTray(true)
+    } else {
+      setTray(false)
+    }
+    setDx(0)
+  }
 
   // Mouse: press anywhere on the row (not on its buttons) and move ~4 px to start a drag, so a
   // plain click still opens the editor. Touch uses the ☰ handle so the list can still scroll.
@@ -221,13 +271,27 @@ function CueRow({
       exit={{ opacity: 0, x: -20 }}
       whileDrag={{ scale: 1.015, zIndex: 20, boxShadow: '0 18px 40px -12px rgba(0,0,0,0.85)' }}
       transition={{ type: 'spring', stiffness: 500, damping: 40 }}
-      onPointerDown={onRowPointerDown}
-      onPointerMove={onRowPointerMove}
-      onPointerUp={onRowPointerUp}
-      onClick={onRowClick}
+      onPointerDown={(e) => {
+        onRowPointerDown(e)
+        onSwipeDown(e)
+      }}
+      onPointerMove={(e) => {
+        onRowPointerMove(e)
+        onSwipeMove(e)
+      }}
+      onPointerUp={() => {
+        onRowPointerUp()
+        onSwipeEnd()
+      }}
+      onPointerCancel={onSwipeEnd}
+      onClick={(e) => {
+        if (swallowClick.current) return
+        if (tray) return setTray(false)
+        onRowClick(e)
+      }}
       onDoubleClick={onStandby}
       data-cue-row={cue.id}
-      className={`group relative cursor-default overflow-hidden rounded-xl border transition-colors select-none ${
+      className={`group relative cursor-default overflow-hidden rounded-xl border transition-colors select-none pointer-coarse:touch-pan-y ${
         dragging
           ? 'border-accent bg-[#1b2433]'
           : instance
@@ -251,7 +315,18 @@ function CueRow({
         className={`absolute inset-y-0 left-0 w-1 ${instance ? 'bg-go' : isStandby ? 'bg-standby' : 'bg-transparent'}`}
       />
 
-      <div className="relative flex min-h-14 items-center gap-3 py-2.5 pr-3 pl-3 pointer-coarse:min-h-16">
+      {/* Swipe hints: Standby behind a right swipe, Edit / Delete behind a left swipe */}
+      {dx > 0 && <span className="absolute inset-y-0 left-0 flex items-center bg-standby/90 px-5 text-sm font-bold text-black" style={{ width: Math.max(dx, 0) }}>STANDBY</span>}
+      {(dx < 0 || tray) && (
+        <div className="absolute inset-y-0 right-0 flex" style={{ width: TRAY }}>
+          <button type="button" onClick={(e) => { e.stopPropagation(); setTray(false); onEdit() }} className="flex-1 bg-accent text-sm font-bold text-white">編輯</button>
+          <button type="button" onClick={(e) => { e.stopPropagation(); setTray(false); onDelete?.() }} disabled={!onDelete} className="flex-1 bg-panic text-sm font-bold text-white disabled:opacity-40">刪除</button>
+        </div>
+      )}
+      <div
+        className={`relative flex min-h-14 items-center gap-3 py-2.5 pr-3 pl-3 pointer-coarse:min-h-16 ${dx === 0 ? 'transition-transform duration-200' : ''}`}
+        style={{ transform: `translate3d(${dx !== 0 ? dx : tray ? -TRAY : 0}px,0,0)`, willChange: 'transform' }}
+      >
         {/* Touch drag handle (mouse users drag the whole row) */}
         <button
           type="button"
@@ -331,7 +406,7 @@ function CueRow({
                 e.stopPropagation()
                 onPauseToggle(instance)
               }}
-              className={`flex h-9 w-9 items-center justify-center rounded-md text-xs pointer-coarse:h-11 pointer-coarse:w-11 ${
+              className={`flex h-9 w-9 items-center justify-center rounded-md text-xs pointer-coarse:h-12 pointer-coarse:w-12 ${
                 instance.pausedAt != null ? 'bg-go text-black' : 'bg-white/10 text-white/80 hover:bg-standby hover:text-black'
               }`}
               title={instance.pausedAt != null ? '繼續此 Cue' : '暫停此 Cue'}
@@ -344,7 +419,7 @@ function CueRow({
                   e.stopPropagation()
                   onStop(instance.instanceId)
                 }}
-                className="flex h-9 w-9 items-center justify-center rounded-md bg-white/10 text-xs text-white/80 hover:bg-panic hover:text-white pointer-coarse:h-11 pointer-coarse:w-11"
+                className="flex h-9 w-9 items-center justify-center rounded-md bg-white/10 text-xs text-white/80 hover:bg-panic hover:text-white pointer-coarse:h-12 pointer-coarse:w-12"
                 title="停止（淡出）"
               >
                 ■
@@ -352,7 +427,7 @@ function CueRow({
             )}
           </div>
         ) : (
-          <span className="w-9 shrink-0 pointer-coarse:w-11" />
+          <span className="w-9 shrink-0 pointer-coarse:w-12" />
         )}
       </div>
     </Reorder.Item>

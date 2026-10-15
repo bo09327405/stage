@@ -65,7 +65,7 @@ export function HitsPanel({ hits, projectId, projectName, page, onPage, onStopAl
           >
             ›
           </button>
-          <button onClick={onStopAll} className="ml-1 h-8 rounded-md px-2 text-[11px] text-white/50 hover:bg-panic/20 hover:text-panic">
+          <button data-haptic="tap" onClick={onStopAll} className="ml-1 h-8 pointer-coarse:h-11 rounded-md px-2 text-[11px] text-white/50 hover:bg-panic/20 hover:text-panic">
             ■ Stop Hits
           </button>
         </div>

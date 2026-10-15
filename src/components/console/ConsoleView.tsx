@@ -575,6 +575,9 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                   selectedId={editingCue?.id ?? null}
                   onSelect={(cue) => openEditor({ mode: 'edit', cueId: cue.id })}
                   onStandby={(cue) => engine.standby(cue).catch(ignore)}
+                  onDelete={(cue) => {
+                    if (window.confirm(`刪除 Q${cue.cueNumber}「${cue.title || '未命名'}」？`)) removeCue(cue.id)
+                  }}
                   paused={paused}
                   onStop={(id) => engine.stopInstance(id).catch(ignore)}
                   onPauseToggle={(inst) =>
