@@ -1,5 +1,6 @@
 import { DEFAULT_DIM_DB, clampDimDb, useDimDb } from '../../utils/dim'
 import { StudioMenu } from './StudioMenu'
+import { useHeaderCollapse } from '../../utils/headerCollapse'
 import { listenForFocusRequests } from '../../services/navigation'
 import { useProjectLock } from '../../services/projectLock'
 import { useAuth } from '../../services/auth'
@@ -84,6 +85,17 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   const basePath = versionPath(show)
   const { cues, loaded, error: cueListError, addCue, saveCue, removeCue, updateCues, removeCues, setCueNumbers } = useCueList(basePath)
   useAudienceStudios(show.projectId, cues)
+  // The whole top bar (nav, undo / redo, save state, Studio, Intercom, project, status line) can fold
+  // away to give the cue list the full height; remembered per device. Folded, it takes no space.
+  const bar = useHeaderCollapse(false, 'isConsoleBarCollapsed')
+  const { collapsed: barFolded, peek: barPeek, startPeek: peekBar } = bar
+  useEffect(() => {
+    if (!barFolded || barPeek) return
+    // A mouse at the very top edge brings it back for a moment (a listener, not an overlay on the cue list).
+    const onMove = (e: PointerEvent) => e.pointerType === 'mouse' && e.clientY <= 2 && peekBar()
+    window.addEventListener('pointermove', onMove, { passive: true })
+    return () => window.removeEventListener('pointermove', onMove)
+  }, [barFolded, barPeek, peekBar])
   // Pop-outs of this project (control panel) can ask this tab to come forward.
   useEffect(() => listenForFocusRequests(show), [show])
   // Multi-selection in the cue list (bulk edit / delete / renumber).
@@ -284,10 +296,32 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
 
   return (
     <IntercomContext.Provider value={intercom}>
-      <div className="flex h-dvh flex-col bg-ink text-white" data-console>
+      <div className="relative flex h-dvh flex-col bg-ink text-white" data-console data-console-bar={bar.collapsed ? (bar.peek ? 'peek' : 'hidden') : 'shown'}>
+        {/* Folded: only a small tab at the top edge brings the bar back */}
+        {bar.collapsed && !bar.peek && (
+          <button
+            type="button"
+            onClick={() => bar.setCollapsed(false)}
+            className="absolute top-0 left-1/2 z-[61] flex h-6 -translate-x-1/2 items-center gap-1 rounded-b-xl border border-t-0 border-line bg-panel/95 px-3 text-[11px] whitespace-nowrap text-white/55 opacity-70 shadow-lg backdrop-blur-xl transition hover:text-white hover:opacity-100 pointer-coarse:h-9 pointer-coarse:px-5 pointer-coarse:text-xs"
+            aria-label="展開頂端列"
+            aria-expanded="false"
+            data-header-toggle="folded"
+          >
+            ⌄ 選單
+          </button>
+        )}
         {/* Top bar */}
         {/* z-40: dropdowns opened from the header (history log) must float over the panels below. */}
-        <header data-safe-header className="relative z-40 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-panel/60 px-4 py-2 backdrop-blur-xl">
+        <header
+          data-safe-header
+          className={`flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-2 backdrop-blur-xl ${
+            bar.collapsed ? `absolute inset-x-0 top-0 z-[60] bg-panel/95 transition-transform duration-200 ${bar.peek ? 'translate-y-0 shadow-2xl' : 'invisible pointer-events-none -translate-y-full'}` : 'relative z-40 bg-panel/60'
+          }`}
+          inert={bar.collapsed && !bar.peek}
+          onPointerEnter={(e) => e.pointerType === 'mouse' && bar.startPeek()}
+          onPointerLeave={(e) => e.pointerType === 'mouse' && bar.peek && bar.endPeek()}
+          data-console-header
+        >
           <button
             onClick={onBack}
             className="flex min-h-10 items-center gap-1.5 rounded-lg px-2.5 text-sm text-white/60 hover:bg-white/10 hover:text-white"
@@ -426,6 +460,16 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
             ⌘Z 復原 · Space GO/Resume · P Pause · ↑↓ Standby · Esc Fade All · D DIM · M Mute · 1–8 Hits
           </span>
           <span className="font-mono text-sm text-white/70 tabular">{clock}</span>
+          <button
+            type="button"
+            onClick={() => bar.setCollapsed(bar.peek ? false : true)}
+            className="flex min-h-10 items-center gap-1 rounded-lg bg-white/[0.06] px-3 text-xs text-white/60 hover:bg-white/10 hover:text-white"
+            aria-label={bar.peek ? '固定顯示頂端列' : '收合頂端列'}
+            title={bar.peek ? '固定顯示頂端列' : '收合整個頂端列（釋放更多空間）'}
+            data-header-toggle="shown"
+          >
+            {bar.peek ? '📌 固定' : '⌃ 收合'}
+          </button>
         </header>
 
         <SetCueProjectDialog

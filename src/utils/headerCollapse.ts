@@ -11,9 +11,9 @@ import { useEffect, useRef, useState } from 'react'
 
 const KEY = 'isToolbarCollapsed'
 
-function read(): boolean {
+function read(key: string): boolean {
   try {
-    return localStorage.getItem(KEY) === 'true'
+    return localStorage.getItem(key) === 'true'
   } catch {
     return false
   }
@@ -23,8 +23,9 @@ function read(): boolean {
 const standalone = () =>
   typeof window !== 'undefined' && (window.matchMedia?.('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true)
 
-export function useHeaderCollapse(isFullscreen: boolean) {
-  const [collapsed, setCollapsedState] = useState(read)
+/** `key`: which bar this is — each bar remembers its own folded / shown choice. */
+export function useHeaderCollapse(isFullscreen: boolean, key = KEY) {
+  const [collapsed, setCollapsedState] = useState(() => read(key))
   const [peek, setPeek] = useState(false)
   const immersive = isFullscreen || standalone()
   const hideTimer = useRef(0)
@@ -33,7 +34,7 @@ export function useHeaderCollapse(isFullscreen: boolean) {
     setPeek(false)
     setCollapsedState(value)
     try {
-      localStorage.setItem(KEY, String(value))
+      localStorage.setItem(key, String(value))
     } catch {
       // Not remembered; still applies now.
     }
@@ -41,10 +42,10 @@ export function useHeaderCollapse(isFullscreen: boolean) {
 
   // Another tab / window of the same device changed it: follow.
   useEffect(() => {
-    const onStorage = (e: StorageEvent) => e.key === KEY && setCollapsedState(e.newValue === 'true')
+    const onStorage = (e: StorageEvent) => e.key === key && setCollapsedState(e.newValue === 'true')
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
-  }, [])
+  }, [key])
 
   /** Mouse at the top edge: show the folded bar over the page for a moment. */
   const startPeek = () => {
