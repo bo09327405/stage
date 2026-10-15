@@ -802,12 +802,12 @@ export function Arrange(props: ArrangeProps) {
                 <span className="absolute top-1 left-1 font-mono text-[10px] whitespace-nowrap text-white/45 tabular">{rulerLabel(t, step)}</span>
               </div>
             ))}
-            {others.map((o) => (
+            {others.filter((o) => Number.isFinite(o.playhead)).map((o) => (
               <span key={o.id} className="absolute top-0 -translate-x-1/2 rounded-b px-1 text-[9px] font-semibold whitespace-nowrap text-black" style={{ left: o.playhead * zoom, background: o.color }}>
                 {o.name}
               </span>
             ))}
-            <span className="absolute -bottom-px h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-panic" style={{ left: playhead * zoom }} />
+            <span className="absolute -bottom-px h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-panic" style={{ left: (Number.isFinite(playhead) ? playhead : 0) * zoom }} />
           </div>
         </div>
         <div className="flex" style={{ height: SECTION_H }}>
@@ -1031,8 +1031,8 @@ export function Arrange(props: ArrangeProps) {
         ])}
 
         {/* Playheads */}
-        <div className="pointer-events-none absolute top-0 bottom-0 z-[25] w-px bg-panic shadow-[0_0_6px_#ff453a]" style={{ left: headerW + playhead * zoom }} data-playhead />
-        {others.map((o) => (
+        <div className="pointer-events-none absolute top-0 bottom-0 z-[25] w-px bg-panic shadow-[0_0_6px_#ff453a]" style={{ left: headerW + (Number.isFinite(playhead) ? playhead : 0) * zoom }} data-playhead />
+        {others.filter((o) => Number.isFinite(o.playhead)).map((o) => (
           <div key={o.id} className="pointer-events-none absolute top-0 bottom-0 z-[24] w-px opacity-70" style={{ left: headerW + o.playhead * zoom, background: o.color }} />
         ))}
       </div>

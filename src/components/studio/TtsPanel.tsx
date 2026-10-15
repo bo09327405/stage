@@ -115,10 +115,22 @@ export function TtsPanel({ onInsert, onPreview }: { onInsert: (buffer: AudioBuff
   const optionLabel = (v: TtsVoice) =>
     engine === 'google' ? `${v.gender === 'female' ? '👩' : '👨'} ${v.label}` : engine === 'local' ? `${v.gender === 'female' ? '👩' : '👨'} ${v.label}（${v.voiceName}）` : `${v.gender === 'female' ? '👩' : '👨'} ${v.label} (Taiwan ${v.gender === 'female' ? 'Female' : 'Male'} - ${v.en})`
 
+  // No speech server here (e.g. GitHub Pages): one calm card instead of a form that can't work.
+  if (unavailable) {
+    return (
+      <div data-tts-panel>
+        <Section title="TTS 語音產生器">
+          <p className="rounded-lg bg-standby/10 px-3 py-3 text-xs leading-relaxed text-standby" data-tts-unavailable>
+            {unavailable}
+          </p>
+        </Section>
+      </div>
+    )
+  }
+
   return (
     <div data-tts-panel>
       <Section title="TTS 語音產生器">
-        {unavailable && <p className="rounded-lg bg-standby/10 px-2.5 py-2 text-xs text-standby">{unavailable}</p>}
         <label className="block">
           <span className="mb-1 block text-xs text-white/60">聲音</span>
           <select

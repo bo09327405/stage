@@ -101,12 +101,18 @@ export function parseScript(text: string, rules: PauseRules = DEFAULT_PAUSES): T
 
 export const scriptDuration = (segments: TtsSegment[]) => segments.reduce((s, x) => s + (x.type === 'pause' ? x.seconds : 0), 0)
 
+/** Static hosting (GitHub Pages…) has no speech server; it is not a failure to retry. */
+const STATIC_HOST = /\.github\.io$|\.pages\.dev$|\.netlify\.app$/i
+export const NO_TTS_ONLINE = '線上版沒有語音合成服務。TTS 需要在本機以 npm run dev 開啟 Studio 才能使用；已經生成並加入音軌的語音不受影響。'
+
 export async function listVoices(): Promise<{ available: boolean; voices: TtsVoice[]; engine?: TtsEngine; defaultVoice?: string; message?: string }> {
   try {
     const res = await fetch('/api/tts/voices')
     return (await res.json()) as { available: boolean; voices: TtsVoice[]; engine: TtsEngine; defaultVoice: string }
   } catch {
-    return { available: false, voices: [], message: '無法連線到語音服務（請確認 npm run dev 仍在執行）' }
+    // Not JSON (the host's 404 page) or no connection.
+    const message = STATIC_HOST.test(location.hostname) ? NO_TTS_ONLINE : '無法連線到語音服務（請確認 npm run dev 仍在執行）'
+    return { available: false, voices: [], message }
   }
 }
 
