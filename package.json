@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "deploy": "npm run build && gh-pages -d dist",
     "lint": "oxlint",
     "preview": "vite preview",
     "osc": "node osc-server.js",
@@ -32,6 +33,7 @@
     "@types/react-dom": "^19.2.7",
     "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "^6.1.1",
+    "gh-pages": "^6.3.0",
     "oxlint": "^1.81.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",

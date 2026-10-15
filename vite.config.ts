@@ -33,11 +33,13 @@ function blockSecrets(): Plugin {
 }
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   // All .env values, for server-side plugins only. Only VITE_* ones ever reach the browser bundle;
   // CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET and the R2_* keys stay on the dev server.
   const env = loadEnv(mode, process.cwd(), '')
   return {
+    // GitHub Pages serves the build from /stage/; dev keeps /.
+    base: command === 'build' ? '/stage/' : '/',
     plugins: [
       blockSecrets(),
       react(),
