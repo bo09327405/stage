@@ -1190,6 +1190,26 @@ function Region({
       <svg className="pointer-events-none absolute inset-x-0 top-4 bottom-0 z-[5]" width={w} height={h - 16} preserveAspectRatio="none">
         {r.fadeIn > 0 && <path d={fadeAreaPath(r.fadeInShape, r.fadeIn * zoom, h - 16, 'in')} fill="rgba(0,0,0,0.45)" />}
         {r.fadeOut > 0 && <path d={fadeAreaPath(r.fadeOutShape, r.fadeOut * zoom, h - 16, 'out', w)} fill="rgba(0,0,0,0.45)" />}
+        {/* Clip volume: the band from the top is how much was taken off (live while dragging ═); a boost shows an amber line */}
+        {r.gain < 0.995 && (
+          <>
+            <rect x={0} y={0} width={w} height={(1 - r.gain) * (h - 16)} fill="rgba(48,209,88,0.30)" data-gain-shade />
+            <line x1={0} x2={w} y1={(1 - r.gain) * (h - 16)} y2={(1 - r.gain) * (h - 16)} stroke="rgba(120,255,160,0.85)" strokeWidth={1.5} />
+            {(1 - r.gain) * (h - 16) > 16 && (
+              <text x={6} y={(1 - r.gain) * (h - 16) - 5} fontSize={11} fontWeight={700} fill="rgba(255,255,255,0.9)" className="font-mono">
+                {dbLabel(r.gain)}
+              </text>
+            )}
+          </>
+        )}
+        {r.gain > 1.005 && (
+          <>
+            <line x1={0} x2={w} y1={1} y2={1} stroke="rgba(255,214,10,0.9)" strokeWidth={2} data-gain-boost />
+            <text x={6} y={14} fontSize={11} fontWeight={700} fill="rgba(255,214,10,0.95)" className="font-mono">
+              {dbLabel(r.gain)}
+            </text>
+          </>
+        )}
       </svg>
 
       {/* Volume automation */}
