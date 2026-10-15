@@ -1,7 +1,7 @@
 {
   "name": "Theatre Cue Studio",
   "short_name": "Cue Studio",
-  "start_url": "./?role=studio",
+  "start_url": "./studio.html?role=studio",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
@@ -15,5 +15,5 @@
       "purpose": "any"
     }
   ],
-  "id": "./?role=studio"
+  "id": "./studio.html"
 }
