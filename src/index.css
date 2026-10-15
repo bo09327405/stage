@@ -1,0 +1,281 @@
+@import "tailwindcss";
+
+@theme {
+  /* Fonts load from Google Fonts; the fallbacks keep the console usable offline. */
+  --font-sans: "Inter", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --color-ink: #121212;
+  --color-panel: #1a1a1a;
+  --color-raised: #232323;
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-go: #30d158;
+  --color-standby: #ffd60a;
+  --color-panic: #ff453a;
+  --color-accent: #0a84ff;
+
+  --animate-stage-fade: stage-fade 600ms ease-out;
+  --animate-eq: eq 900ms ease-in-out infinite alternate;
+  --animate-asset-reveal: asset-reveal 2s ease-out;
+}
+
+/* Scrollable without a visible scrollbar (wheel, trackpad and touch still scroll). */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Studio 素材: the file behind a clicked clip, pulsing yellow for two seconds. */
+@keyframes asset-reveal {
+  0%,
+  30%,
+  60% {
+    background-color: rgb(255 214 10 / 0.28);
+    box-shadow: inset 0 0 0 2px #ffd60a, 0 0 14px rgb(255 214 10 / 0.55);
+  }
+  15%,
+  45% {
+    background-color: rgb(255 214 10 / 0.1);
+    box-shadow: inset 0 0 0 2px rgb(255 214 10 / 0.5), 0 0 4px rgb(255 214 10 / 0.2);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: inset 0 0 0 2px transparent;
+  }
+}
+
+@keyframes stage-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes eq {
+  from {
+    height: 20%;
+  }
+  to {
+    height: 100%;
+  }
+}
+
+html,
+body {
+  background: var(--color-ink);
+  color: #f5f5f7;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Range sliders styled like hardware faders. */
+input[type="range"].fader {
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"].fader::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--fader-fill, #f5f5f7) var(--fader-pct, 0%), rgb(255 255 255 / 0.12) var(--fader-pct, 0%));
+}
+input[type="range"].fader::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--fader-fill, #f5f5f7) var(--fader-pct, 0%), rgb(255 255 255 / 0.12) var(--fader-pct, 0%));
+}
+input[type="range"].fader::-webkit-slider-thumb {
+  appearance: none;
+  margin-top: -8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: #f5f5f7;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.5);
+}
+input[type="range"].fader::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 6px;
+  background: #f5f5f7;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Indeterminate upload bar (fetch can't report upload progress). */
+@keyframes upload-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+/* Waveform trim handles (Go Button yellow), wide enough to grab with a finger on a tablet. */
+.wave-trim *::part(region) {
+  border-top: 2px solid #ffd60a;
+  border-bottom: 2px solid #ffd60a;
+}
+.wave-trim *::part(region-handle) {
+  width: 14px !important;
+  background: #ffd60a;
+  border: 0 !important;
+  border-radius: 5px;
+}
+.wave-trim *::part(region-handle-left) {
+  left: -2px !important;
+}
+.wave-trim *::part(region-handle-right) {
+  right: -2px !important;
+}
+
+/*
+ * Control panel on touch screens (iPad): no double-tap zoom or long-press callouts, no text
+ * selection on controls, smooth contained scrolling, no page rubber-banding, and at least 44 px
+ * touch targets for the keys used during a show.
+ */
+.surface-touch {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.surface-touch :is(button, a, label, select, [role='slider'], [role='separator'], [data-widget]) {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.surface-touch :is(main, aside, ul, ol, [data-sidebar-strips], .overflow-y-auto, .overflow-x-auto, .overflow-auto) {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+html:has(.surface-touch),
+body:has(.surface-touch) {
+  overscroll-behavior: none;
+}
+@media (pointer: coarse) {
+  .surface-touch header :is(button, select, a):not([data-header-toggle]),
+  .surface-touch :is([data-exec-pause], [data-exec-back], [data-exec-off], [data-sidebar-goto], [data-sheet-goto], [data-exec-select], [data-grid-preset]) {
+    min-height: 44px;
+  }
+  .surface-touch :is([data-sidebar-goto], [data-sheet-goto]) {
+    min-width: 56px;
+  }
+}
+
+/* ───────── Mobile / PWA ───────── */
+
+/* No 300 ms tap delay or double-tap zoom anywhere; no iOS tap flash. */
+html {
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none; /* no pull-to-refresh / rubber-banding chaining to the page */
+}
+button,
+a,
+select,
+summary,
+label,
+[role='button'],
+[role='slider'],
+[role='separator'],
+[role='tab'],
+[role='option'],
+[data-widget] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Faders, knobs and drag handles: a finger on them never scrolls, selects or long-press-callouts. */
+input[type='range'],
+input[type='range'].fader,
+[role='slider'],
+[role='separator'],
+.cursor-ew-resize,
+.cursor-ns-resize,
+.cursor-col-resize,
+.cursor-row-resize {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+input[type='range'] {
+  -webkit-tap-highlight-color: transparent;
+}
+/* Bigger thumb on touch screens so a finger can grab it. */
+@media (pointer: coarse) {
+  input[type='range'].fader::-webkit-slider-thumb {
+    width: 26px;
+    height: 26px;
+    margin-top: -11px;
+  }
+  input[type='range'].fader::-moz-range-thumb {
+    width: 26px;
+    height: 26px;
+  }
+}
+/* Dragging anything: no accidental text selection. */
+body.dragging,
+body.dragging * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Full-screen consoles: the page itself never scrolls or bounces; only inner panels do. */
+body:has(.surface-touch.h-dvh),
+body:has([data-studio]),
+body:has([data-console]) {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+:is([data-studio], [data-console], .surface-touch) :is(.overflow-y-auto, .overflow-x-auto, .overflow-auto, .overflow-scroll) {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Safe areas: notch / Dynamic Island, rounded corners, home indicator. */
+[data-safe-header] {
+  padding-top: calc(0.5rem + env(safe-area-inset-top, 0px));
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+}
+[data-safe-fixed] {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+@media (display-mode: standalone) {
+  body {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+}
+
+/* GPU layers for the parts that move or update every frame (timers, meters, faders, drawers). */
+.tabular,
+[data-meter],
+[data-playhead],
+[data-sidebar-strips] > *,
+input[type='range'].fader,
+[data-safe-fixed],
+aside[aria-label='控台側欄'] {
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+  }
+}

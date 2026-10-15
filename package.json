@@ -1,0 +1,40 @@
+{
+  "name": "theatre-cue",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "osc": "node osc-server.js",
+    "rules:build": "node scripts/build-rules.mjs",
+    "tts:setup": "node scripts/setup-tts.mjs"
+  },
+  "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
+    "@google-cloud/text-to-speech": "^7.1.1",
+    "firebase": "^13.0.0",
+    "motion": "^14.1.0",
+    "opencc-js": "^1.4.2",
+    "osc": "^2.4.5",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "sherpa-onnx-node": "^1.13.8",
+    "wavesurfer.js": "^8.0.2",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@types/ws": "^8.18.2",
+    "@vitejs/plugin-react": "^6.1.1",
+    "oxlint": "^1.81.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0"
+  }
+}
