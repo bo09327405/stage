@@ -1,3 +1,4 @@
+import { notionFailure, notionIdOf, readNotionPage } from '../server/notionCore.ts'
 import { callerFromHeaders, projectAccess, projectOfKey, type Caller } from '../server/projectAccess.ts'
 
 /**
@@ -74,7 +75,39 @@ export default {
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
 
+/**
+ * GET /api/notion?id=<page id>: a published Notion page as simple blocks (the same reader the dev server
+ * uses; no token needed — the page just has to be "Shared to web"). Complete pages are cached at the
+ * edge for 45 s, so reopening a note is instant and Notion isn't asked on every click.
+ */
+async function notionRoute(req: Request, url: URL): Promise<Response> {
+  if (req.method !== 'GET') return json(405, { error: 'invalid_url', message: 'method not allowed' })
+  const id = notionIdOf(url.searchParams.get('id'))
+  if (!id) return json(400, { error: 'invalid_url', message: '網址中找不到 Notion 頁面 ID' })
+  const key = new Request(`https://notion-cache.invalid/${id.replace(/-/g, '').toLowerCase()}`)
+  const cache = caches.default
+  const hit = await cache.match(key)
+  if (hit) {
+    const res = new Response(hit.body, hit)
+    res.headers.set('cache-control', 'no-store')
+    res.headers.set('x-cache', 'HIT')
+    return res
+  }
+  try {
+    const page = await readNotionPage(id)
+    // A page with blocks still missing is not cached: the app retries and should really ask again.
+    if (page.unresolved === 0) {
+      await cache.put(key, new Response(JSON.stringify(page), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=45' } }))
+    }
+    return json(200, page)
+  } catch (err) {
+    const f = notionFailure(err)
+    return json(f.status, f.body)
+  }
+}
+
 async function handle(req: Request, env: Env, url: URL): Promise<Response> {
+  if (url.pathname === '/api/notion') return notionRoute(req, url)
   if (!url.pathname.startsWith('/api/r2/')) return json(404, { error: 'not found' })
   const path = url.pathname.slice('/api/r2'.length)
   const access = projectAccess(env.DATABASE_URL)

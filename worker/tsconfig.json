@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["./*.ts", "../server/projectAccess.ts"]
+  "include": ["./*.ts", "../server/projectAccess.ts", "../server/notionCore.ts", "../src/types/notion.ts"]
 }

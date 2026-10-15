@@ -9,7 +9,9 @@ import { app } from './firebase'
  * Without VITE_API_BASE (dev server) this does nothing.
  */
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/+$/, '')
-const PREFIX = '/api/r2/'
+/** Served by the Worker: file storage and the Notion page reader. */
+const PREFIXES = ['/api/r2/', '/api/notion']
+const isApiPath = (path: string) => PREFIXES.some((p) => path.startsWith(p))
 
 /**
  * "/api/r2/…" → the Worker. Also fixes full addresses saved while developing (a LAN / ngrok host in
@@ -17,11 +19,11 @@ const PREFIX = '/api/r2/'
  */
 const rewrite = (u: string) => {
   if (!BASE) return u
-  if (u.startsWith(PREFIX)) return BASE + u
+  if (isApiPath(u)) return BASE + u
   if (/^https?:\/\//i.test(u) && !u.startsWith(BASE)) {
     try {
       const x = new URL(u)
-      if (x.pathname.startsWith(PREFIX)) return BASE + x.pathname + x.search
+      if (isApiPath(x.pathname)) return BASE + x.pathname + x.search
     } catch {
       /* not a URL */
     }
@@ -34,7 +36,7 @@ if (BASE) {
   const nativeFetch = window.fetch.bind(window)
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const target = typeof input === 'string' ? rewrite(input) : ''
-    if (typeof input !== 'string' || !target.startsWith(BASE + PREFIX)) return nativeFetch(input, init)
+    if (typeof input !== 'string' || !isApiPath(target.slice(BASE.length)) || !target.startsWith(BASE)) return nativeFetch(input, init)
     const headers = new Headers(init?.headers)
     try {
       const token = await auth.currentUser?.getIdToken()
