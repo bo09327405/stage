@@ -1,0 +1,35 @@
+export async function onRequestPost(context) {
+  try {
+    const { request, env } = context;
+    const filename = request.headers.get('X-Filename') || `audio-${Date.now()}.mp3`;
+    
+    // 利用綁定的 R2 儲存桶寫入檔案
+    await env.MY_BUCKET.put(filename, request.body);
+
+    return new Response(JSON.stringify({ 
+      success: true, 
+      filename: filename,
+      message: '上傳成功！' 
+    }), {
+      headers: { 
+        'Content-Type': 'application/json', 
+        'Access-Control-Allow-Origin': '*' 
+      }
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err.message }), { 
+      status: 500, 
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } 
+    });
+  }
+}
+
+export async function onRequestOptions() {
+  return new Response(null, {
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, X-Filename',
+    },
+  });
+}

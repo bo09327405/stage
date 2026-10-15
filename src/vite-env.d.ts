@@ -1,6 +1,8 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  /** Cloudflare Worker origin serving /api/r2 when the site is hosted statically (GitHub Pages). */
+  readonly VITE_API_BASE?: string
   readonly VITE_FIREBASE_API_KEY: string
   readonly VITE_FIREBASE_AUTH_DOMAIN: string
   readonly VITE_FIREBASE_DATABASE_URL: string

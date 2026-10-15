@@ -20,13 +20,12 @@ export interface Caller {
   uid: string | null
 }
 
-export function callerOf(req: IncomingMessage): Caller {
+/** The caller behind an Authorization / Cookie header pair (Node dev server and the Worker share this). */
+export function callerFromHeaders(authorization: string | null | undefined, cookie: string | null | undefined): Caller {
   let token: string | null = null
-  const auth = req.headers.authorization
-  if (auth?.startsWith('Bearer ')) token = auth.slice(7).trim()
+  if (authorization?.startsWith('Bearer ')) token = authorization.slice(7).trim()
   if (!token) {
-    const cookie = req.headers.cookie ?? ''
-    const m = /(?:^|;\s*)theatre_id=([^;]+)/.exec(cookie)
+    const m = /(?:^|;\s*)theatre_id=([^;]+)/.exec(cookie ?? '')
     if (m) token = decodeURIComponent(m[1])
   }
   if (token && !/^[\w-]+\.[\w-]+\.[\w-]*$/.test(token)) token = null
@@ -34,13 +33,18 @@ export function callerOf(req: IncomingMessage): Caller {
   let uid: string | null = null
   if (token) {
     try {
-      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8')) as { user_id?: string; sub?: string }
+      const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+      const payload = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)))) as { user_id?: string; sub?: string }
       uid = payload.user_id ?? payload.sub ?? null
     } catch {
       token = null
     }
   }
   return { token, uid }
+}
+
+export function callerOf(req: IncomingMessage): Caller {
+  return callerFromHeaders(req.headers.authorization, req.headers.cookie)
 }
 
 /** Same cleanup as cleanProjectName() in src/types/project.ts (R2 folders are named after projects). */

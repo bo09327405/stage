@@ -1,0 +1,12 @@
+name = "theatre-r2"
+main = "worker/index.ts"
+compatibility_date = "2026-01-01"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "115pa"
+
+[vars]
+DATABASE_URL = "https://performingarts-adb73-default-rtdb.firebaseio.com"
+CLOUDINARY_CLOUD = "j2w2qgzs"
+ALLOWED_ORIGINS = "https://bo09327405.github.io,https://localhost:5174,https://localhost:5173"
