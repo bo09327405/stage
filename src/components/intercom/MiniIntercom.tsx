@@ -246,6 +246,11 @@ export function MiniIntercom({ widget, preview = false }: { widget: SurfaceWidge
       </div>
       )}
       {voice.error && <span className="text-[10px] text-standby">{voice.error}</span>}
+      {voice.on && !voice.hasMic && (
+        <button type="button" onClick={() => void voice.retryMic()} className="min-h-9 rounded-lg bg-go/15 px-3 text-[11px] font-semibold text-go">
+          🎙 重新開啟麥克風
+        </button>
+      )}
     </>,
   )
 }

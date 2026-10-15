@@ -1,5 +1,8 @@
 /// <reference types="vite/client" />
 
+/** Id of this build (see vite.config.ts); compared with version.json on the server. */
+declare const __BUILD_ID__: string
+
 interface ImportMetaEnv {
   /** Cloudflare Worker origin serving /api/r2 when the site is hosted statically (GitHub Pages). */
   readonly VITE_API_BASE?: string

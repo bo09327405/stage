@@ -320,6 +320,16 @@ export function useIntercom(projectId: string) {
     setVoiceOn(true)
   }, [attachRemote, base, joined])
 
+  /** Ask for the microphone again (call from a tap: the browser only prompts inside a gesture). */
+  const retryMic = useCallback(() => {
+    meshRef.current?.stop()
+    meshRef.current = null
+    localAnalyser.current = null
+    setHasMic(false)
+    // enableVoice() reaches getUserMedia synchronously, so the tap's permission to prompt still applies.
+    return enableVoice()
+  }, [enableVoice])
+
   const disableVoice = useCallback(() => {
     meshRef.current?.stop()
     meshRef.current = null
@@ -505,6 +515,7 @@ export function useIntercom(projectId: string) {
       speaking,
       peerStates,
       enable: enableVoice,
+      retryMic,
       disable: disableVoice,
     },
   }

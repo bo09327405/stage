@@ -33,6 +33,15 @@ function blockSecrets(): Plugin {
 }
 
 // https://vite.dev/config/
+/** One id per build: baked into the bundle and written to version.json, so a running page can tell it is stale. */
+const BUILD_ID = Date.now().toString(36)
+const emitVersion = (): Plugin => ({
+  name: 'emit-version',
+  generateBundle() {
+    this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ id: BUILD_ID }) })
+  },
+})
+
 export default defineConfig(({ mode, command }) => {
   // All .env values, for server-side plugins only. Only VITE_* ones ever reach the browser bundle;
   // CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET and the R2_* keys stay on the dev server.
@@ -40,8 +49,10 @@ export default defineConfig(({ mode, command }) => {
   return {
     // GitHub Pages serves the build from /stage/; dev keeps /.
     base: command === 'build' ? '/stage/' : '/',
+    define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
     plugins: [
       blockSecrets(),
+      emitVersion(),
       react(),
       tailwindcss(),
       notionProxy(),

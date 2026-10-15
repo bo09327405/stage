@@ -27,15 +27,24 @@ export interface VoiceMeshOptions {
 }
 
 /** Friendly explanations for getUserMedia failures. */
+const isHomeScreenApp = () => window.matchMedia?.('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true
+
 export function describeMicError(err: unknown): string {
   const name = (err as DOMException)?.name
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
     return '此網址不支援麥克風：語音需要 https 或 localhost（區網 http 無法使用）。目前為僅收聽模式。'
   }
-  if (name === 'NotAllowedError' || name === 'SecurityError') return '麥克風權限被拒絕。請在瀏覽器網址列的權限設定允許麥克風，目前為僅收聽模式。'
+  if (name === 'NotAllowedError' || name === 'SecurityError') {
+    // iOS asks for the microphone again in every launch of a home-screen app, and a "Don't Allow"
+    // sticks until the app is closed: say exactly what to do.
+    if (isHomeScreenApp()) {
+      return `麥克風權限被拒絕（${name}）。主畫面 App 每次開啟都會詢問一次麥克風：請完全關閉此 App（從 App 切換器上滑移除）後重新開啟，出現提示時按「允許」，再按「重新開啟麥克風」。若仍然不行，請改用 Safari 開啟網頁版。目前為僅收聽模式。`
+    }
+    return `麥克風權限被拒絕（${name}）。請在瀏覽器網址列的權限設定允許麥克風，再按「重新開啟麥克風」。目前為僅收聽模式。`
+  }
   if (name === 'NotFoundError' || name === 'OverconstrainedError') return '找不到麥克風裝置，目前為僅收聽模式。'
   if (name === 'NotReadableError') return '麥克風正被其他程式使用中，目前為僅收聽模式。'
-  return `無法開啟麥克風（${(err as Error)?.message ?? name}），目前為僅收聽模式。`
+  return `無法開啟麥克風（${name ?? 'Error'}：${(err as Error)?.message ?? ''}），目前為僅收聽模式。`
 }
 
 export class VoiceMesh {

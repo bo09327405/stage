@@ -182,6 +182,11 @@ function VoiceControls({ intercom }: { intercom: Intercom }) {
   return (
     <div className="space-y-2.5">
       {voice.error && <p className="rounded-lg bg-standby/10 px-3 py-2 text-xs leading-relaxed text-standby">{voice.error}</p>}
+      {!voice.hasMic && (
+        <button type="button" onClick={() => void voice.retryMic()} className="min-h-12 w-full rounded-xl bg-go/15 text-sm font-semibold text-go hover:bg-go/25" data-mic-retry>
+          🎙 重新開啟麥克風
+        </button>
+      )}
       {voice.hasMic && (
         <Segmented<'ptt' | 'open'>
           columns={2}
