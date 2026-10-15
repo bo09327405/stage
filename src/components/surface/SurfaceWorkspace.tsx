@@ -96,7 +96,7 @@ function HeaderTab({ label, title, expanded, onClick, folded = false }: { label:
     <button
       type="button"
       onClick={onClick}
-      className={`absolute left-1/2 z-[61] flex h-6 -translate-x-1/2 items-center gap-1 rounded-b-xl border border-t-0 border-line bg-panel/95 px-3 text-[11px] whitespace-nowrap text-white/55 shadow-lg backdrop-blur-xl transition before:absolute before:-inset-x-3 before:-inset-y-3 before:content-[''] hover:text-white ${folded ? 'top-0 opacity-70 hover:opacity-100' : 'top-full'}`}
+      className={`absolute left-1/2 z-[61] flex h-6 pointer-coarse:h-9 pointer-coarse:px-5 pointer-coarse:text-xs -translate-x-1/2 items-center gap-1 rounded-b-xl border border-t-0 border-line bg-panel/95 px-3 text-[11px] whitespace-nowrap text-white/55 shadow-lg backdrop-blur-xl transition before:absolute before:-inset-x-3 before:-inset-y-3 before:content-[''] hover:text-white ${folded ? 'top-0 opacity-70 hover:opacity-100' : 'top-full'}`}
       aria-label={title}
       aria-expanded={expanded}
       title={title}
@@ -463,9 +463,9 @@ export function SurfaceWorkspace({
             </button>
           )}
         </div>
-        {(header.immersive || header.collapsed) && (!header.collapsed || header.peek) && (
+        {(!header.collapsed || header.peek) && (
           // Hangs below the bar: fold it away, or pin a peeked bar open.
-          <HeaderTab label={header.peek ? '📌 固定' : '⌃ 收合'} title={header.peek ? '固定顯示頂端列' : '收合頂端列（全螢幕時釋放更多空間）'} expanded onClick={() => header.setCollapsed(header.peek ? false : true)} />
+          <HeaderTab label={header.peek ? '📌 固定' : '⌃ 收合'} title={header.peek ? '固定顯示頂端列' : '收合頂端列（釋放更多空間）'} expanded onClick={() => header.setCollapsed(header.peek ? false : true)} />
         )}
       </header>
 

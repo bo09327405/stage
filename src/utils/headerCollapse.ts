@@ -1,23 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 
 /*
- * The control panel's top bar in full screen (or as a home-screen app on iPad): it can be folded
- * away to give the executors, sequences and panel the whole height, and called back with the tab
+ * The control panel's second bar (surface tabs, 面板 / Executor / 網格 / 側欄, Monitor / Notes /
+ * Stage / OSC / MIDI, 編輯面板): it can be folded away completely — in a normal browser window,
+ * full screen and the home-screen app alike — so the cue list and pads get the whole height. A folded
+ * bar takes no layout space (it floats over the page while peeked) and is called back with the tab
  * at the top edge (or, with a mouse, by touching the top edge — it hides again when left).
- * Folded / shown is remembered per device, separately for full screen and the normal window.
+ * Folded / shown is one preference, remembered per device (localStorage "isToolbarCollapsed").
  */
 
-const KEY = 'theatre.surface.headerCollapsed'
-type Pref = { fs: boolean; win: boolean; app: boolean }
+const KEY = 'isToolbarCollapsed'
 
-function read(): Pref {
+function read(): boolean {
   try {
-    const r = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<Pref> | null
-    // Full screen folds the bar by default: that's what it's for.
-    // The home-screen app starts with the bar showing (folded only if the user folded it there).
-    return { fs: r?.fs !== false, win: r?.win === true, app: r?.app === true }
+    return localStorage.getItem(KEY) === 'true'
   } catch {
-    return { fs: true, win: false, app: false }
+    return false
   }
 }
 
@@ -26,25 +24,27 @@ const standalone = () =>
   typeof window !== 'undefined' && (window.matchMedia?.('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true)
 
 export function useHeaderCollapse(isFullscreen: boolean) {
-  const [pref, setPref] = useState(read)
+  const [collapsed, setCollapsedState] = useState(read)
   const [peek, setPeek] = useState(false)
   const immersive = isFullscreen || standalone()
-  const homeApp = !isFullscreen && standalone()
-  const collapsed = homeApp ? pref.app : immersive ? pref.fs : pref.win
   const hideTimer = useRef(0)
 
   const setCollapsed = (value: boolean) => {
     setPeek(false)
-    setPref((p) => {
-      const next = homeApp ? { ...p, app: value } : immersive ? { ...p, fs: value } : { ...p, win: value }
-      try {
-        localStorage.setItem(KEY, JSON.stringify(next))
-      } catch {
-        // Not remembered; still applies now.
-      }
-      return next
-    })
+    setCollapsedState(value)
+    try {
+      localStorage.setItem(KEY, String(value))
+    } catch {
+      // Not remembered; still applies now.
+    }
   }
+
+  // Another tab / window of the same device changed it: follow.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => e.key === KEY && setCollapsedState(e.newValue === 'true')
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
   /** Mouse at the top edge: show the folded bar over the page for a moment. */
   const startPeek = () => {
