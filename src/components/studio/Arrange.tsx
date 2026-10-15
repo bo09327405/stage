@@ -292,9 +292,27 @@ export function Arrange(props: ArrangeProps) {
   }
   const trackIndex = (id: string) => tracks.findIndex((t) => t.id === id)
 
-  const beginMove = (e: PointerEvent, r: StudioRegion) => {
+  const beginMove = (e: PointerEvent, r: StudioRegion, grip = false) => {
     if (e.button !== 0 || e.pointerType === 'touch' && touches.current.size > 1) return
     e.stopPropagation()
+    // Touch: the three gestures never share a press. An unselected clip only taps to select (a drag
+    // on it scrolls the timeline, a hold opens its menu); a selected clip — or its grip — drags.
+    if (e.pointerType !== 'mouse' && !grip && !selection.includes(r.id)) {
+      const from = { x: e.clientX, y: e.clientY, id: e.pointerId }
+      const finish = (up: globalThis.PointerEvent, cancelled: boolean) => {
+        window.removeEventListener('pointerup', onUp)
+        window.removeEventListener('pointercancel', onCancel)
+        if (!cancelled && up.pointerId === from.id && Math.hypot(up.clientX - from.x, up.clientY - from.y) < 6) {
+          onSelect([r.id])
+          onSelectTrack(r.trackId)
+        }
+      }
+      const onUp = (up: globalThis.PointerEvent) => finish(up, false)
+      const onCancel = (up: globalThis.PointerEvent) => finish(up, true)
+      window.addEventListener('pointerup', onUp)
+      window.addEventListener('pointercancel', onCancel)
+      return
+    }
     let ids = selection
     if (e.shiftKey || e.metaKey || e.ctrlKey) {
       ids = selection.includes(r.id) ? selection.filter((x) => x !== r.id) : [...selection, r.id]
@@ -831,7 +849,7 @@ export function Arrange(props: ArrangeProps) {
                     selected={selection.includes(r.id)}
                     remote={othersByRegion.get(r.id)}
                     automationMode={automationMode}
-                    onMoveStart={(e) => beginMove(e, r)}
+                    onMoveStart={(e, grip) => beginMove(e, r, grip)}
                     onEdgeStart={(e, kind) => beginEdge(e, r, kind)}
                     onNodeStart={(e, i, rect) => beginNode(e, r, i, rect)}
                     onAddNode={(e) => addNode(e, r)}
@@ -848,6 +866,7 @@ export function Arrange(props: ArrangeProps) {
                     onCurveChange={(pts, label) => props.onCommit([{ id: r.id, patch: { automation: pts } }], label)}
                     onMenu={(e) => {
                       e.preventDefault()
+                      gesture.current = null
                       if (!selection.includes(r.id)) onSelect([r.id])
                       props.onRegionMenu(r, e.clientX, e.clientY)
                     }}
@@ -976,7 +995,7 @@ function Region({
   selected: boolean
   remote?: StudioPresence
   automationMode: boolean
-  onMoveStart: (e: PointerEvent) => void
+  onMoveStart: (e: PointerEvent, grip?: boolean) => void
   onEdgeStart: (e: PointerEvent, kind: 'trim-l' | 'trim-r' | 'fade-in' | 'fade-out') => void
   onNodeStart: (e: PointerEvent, index: number, rect: DOMRect) => void
   onAddNode: (e: ReactMouseEvent) => void
@@ -1005,13 +1024,24 @@ function Region({
 
   return (
     <div
-      className={`group absolute top-1 overflow-hidden rounded-md border ${selected ? 'border-white ring-1 ring-white/70' : 'border-black/40'} ${r.muted ? 'opacity-40' : ''}`}
+      className={`group absolute top-1 overflow-hidden rounded-md border ${selected ? 'touch-none border-white ring-1 ring-white/70' : 'touch-pan-x touch-pan-y border-black/40'} ${r.muted ? 'opacity-40' : ''}`}
       style={{ left: x, width: w, height: h, background: `${color}33`, outline: remote ? `2px solid ${remote.color}` : undefined }}
       onPointerDown={automationMode ? undefined : onMoveStart}
       onContextMenu={onMenu}
       data-region={r.id}
       title={r.comment || undefined}
     >
+      {/* Touch grip: drag a selected clip from here without waiting for (or fighting) a long press */}
+      {selected && !automationMode && (
+        <div
+          className="absolute top-0 right-0 z-[9] hidden h-9 w-9 touch-none items-center justify-center rounded-bl-xl bg-white/90 text-base text-black shadow pointer-coarse:flex"
+          onPointerDown={(e) => onMoveStart(e, true)}
+          aria-label="拖曳移動片段"
+          data-region-grip
+        >
+          ⠿
+        </div>
+      )}
       {/* Name bar (always draggable, also in automation mode) */}
       <div
         className="relative z-10 flex h-4 items-center gap-1 px-1.5 text-[10px] font-semibold whitespace-nowrap text-black"

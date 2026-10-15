@@ -2,7 +2,9 @@ import { useEffect, useRef, type PointerEvent } from 'react'
 import { LONG_PRESS_MS } from '../studio/curveGeometry'
 
 /** Finger travel (px) that turns a press into a drag / scroll instead of a long press. */
-const SLOP = 8
+const SLOP = 5
+/** A clip opens its menu after a shorter hold than the rest of the editor. */
+const CLIP_LONG_PRESS_MS = 300
 
 /**
  * Touch and pen have no right-click: Safari on iPad doesn't fire `contextmenu` for a held press on
@@ -34,11 +36,12 @@ export function useLongPressContextMenu() {
       if (target.closest?.('[data-curve-ui]')) return
       const { clientX, clientY, pointerId } = e
       press.current = { id: pointerId, x: clientX, y: clientY }
+      const delay = target.closest?.('[data-region]') ? CLIP_LONG_PRESS_MS : LONG_PRESS_MS
       timer.current = window.setTimeout(() => {
         press.current = null
         if (!target.isConnected) return
         target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX, clientY, button: 2 }))
-      }, LONG_PRESS_MS)
+      }, delay)
     },
     onPointerMoveCapture(e: PointerEvent) {
       const p = press.current

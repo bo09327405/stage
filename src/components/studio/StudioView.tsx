@@ -489,6 +489,18 @@ export function StudioView({
   }
 
   /* ---------- region actions (menu + shortcuts) ---------- */
+  // Touch helper bar: nudge the selected clips left / right by a chosen step.
+  const [nudgeStep, setNudgeStep] = useState(0.1)
+  const nudge = (dir: -1 | 1) => {
+    const sel = selectedRegions
+    if (!sel.length) return
+    const delta = dir * nudgeStep
+    // Keep the group together: stop at the timeline's start instead of squashing clips.
+    const room = Math.min(...sel.map((r) => r.start))
+    const d = delta < 0 ? Math.max(delta, -room) : delta
+    if (d === 0) return
+    commit(sel.map((r) => ({ id: r.id, patch: { start: Math.round((r.start + d) * 1000) / 1000 } })), '微調片段位置', 'nudge')
+  }
   const regionAction = async (a: RegionAction) => {
     if (!studio) return
     const sel = selectedRegions
@@ -1193,6 +1205,20 @@ export function StudioView({
             <span>Space 播放 · R 錄音 · A 自動化 · ⌘E 分割 · ⌘M 靜音 · ⌘C/X/V 複製剪下貼上 · ⌘D 複製一份 · ⌫ 刪除 · ⌘Z 復原</span>
             <span className="ml-auto">已選 {validSelection.length} 個片段 · 長度 {timecode(length)}</span>
           </div>
+          {/* Touch helper bar: the same actions as the long-press menu, one tap away */}
+          {selectedRegions.length > 0 && !menu && (
+            <div
+              className="fixed bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-1/2 z-[70] hidden max-w-[96vw] -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-2xl border border-white/15 bg-[#1c1c1e]/95 p-1.5 shadow-2xl backdrop-blur-xl pointer-coarse:flex no-scrollbar"
+              data-touch-bar
+            >
+              <button type="button" className="h-12 shrink-0 rounded-xl bg-white/10 px-3 text-sm font-semibold" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenu({ region: selectedRegions[0], x: r.left, y: r.top }) }}>編輯選單</button>
+              <button type="button" data-haptic="tap" className="h-12 w-12 shrink-0 rounded-xl bg-white/10 text-lg" aria-label="往前微調" onClick={() => nudge(-1)}>◀</button>
+              <button type="button" className="h-12 shrink-0 rounded-xl bg-white/[0.06] px-2 font-mono text-xs text-white/70" aria-label="微調步進" onClick={() => setNudgeStep((s) => (s === 0.01 ? 0.1 : s === 0.1 ? 1 : 0.01))}>{nudgeStep}s</button>
+              <button type="button" data-haptic="tap" className="h-12 w-12 shrink-0 rounded-xl bg-white/10 text-lg" aria-label="往後微調" onClick={() => nudge(1)}>▶</button>
+              <button type="button" data-haptic="tap" className="h-12 shrink-0 rounded-xl bg-white/10 px-3 text-sm font-semibold" onClick={() => regionAction('duplicate')}>複製</button>
+              <button type="button" data-haptic="strong" className="h-12 shrink-0 rounded-xl bg-panic/80 px-3 text-sm font-semibold text-white" onClick={() => regionAction('delete')}>刪除</button>
+            </div>
+          )}
           {menu && (
             <RegionMenu
               region={studio.regions[menu.region.id] ?? menu.region}
