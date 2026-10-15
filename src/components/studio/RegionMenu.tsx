@@ -16,6 +16,7 @@ export type RegionAction =
   | 'reverse'
   | 'cleanup'
   | 'resetAutomation'
+  | 'reveal'
   | { rename: string }
   | { comment: string }
   | { pitch: number }
@@ -107,6 +108,7 @@ export function RegionMenu({
             setText(region.name)
             setMode('rename')
           })}
+          {region.url && item('在素材庫中定位 Reveal in library', 'reveal')}
           {item('分割 Split region', 'split', K('E'))}
           {item('靜音 Mute region', 'mute', K('M'), { checked: region.muted })}
           {item(region.comment ? '編輯註解 Comment' : '新增註解 Add comment', () => {

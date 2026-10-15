@@ -501,6 +501,13 @@ export function StudioView({
     if (d === 0) return
     commit(sel.map((r) => ({ id: r.id, patch: { start: Math.round((r.start + d) * 1000) / 1000 } })), '微調片段位置', 'nudge')
   }
+  /** Open the 素材 panel on the file behind a clip. */
+  const revealInLibrary = (r: StudioRegion) => {
+    if (!r.url) return
+    setTab('library')
+    setSideOpen(true)
+    setReveal({ url: r.url, publicId: r.publicId, name: r.name, nonce: Date.now() })
+  }
   const regionAction = async (a: RegionAction) => {
     if (!studio) return
     const sel = selectedRegions
@@ -541,6 +548,7 @@ export function StudioView({
       return
     }
     if (!sel.length) return
+    if (a === 'reveal') return revealInLibrary(sel[0])
     if (a === 'mute') return commit(sel.map((r) => ({ id: r.id, patch: { muted: !sel[0].muted } })), sel[0].muted ? '取消靜音片段' : '靜音片段')
     if (a === 'reverse') return commit(sel.map((r) => ({ id: r.id, patch: { reverse: !sel[0].reverse } })), sel[0].reverse ? '取消反轉' : '反轉片段')
     if (a === 'cleanup') return commit(sel.map((r) => ({ id: r.id, patch: { cleanup: !sel[0].cleanup } })), sel[0].cleanup ? '取消人聲清理' : '人聲清理')
@@ -1056,10 +1064,10 @@ export function StudioView({
                 onCommit={(changes, label) => commit(changes, label)}
                 onRegionMenu={(region, x, y) => setMenu({ region, x, y })}
                 onRegionClick={(r) => {
-                  if (!r.url) return
-                  setTab('library')
-                  setSideOpen(true)
-                  setReveal({ url: r.url, publicId: r.publicId, name: r.name, nonce: Date.now() })
+                  // Phones: selecting a clip only highlights it — the library covers the timeline there.
+                  // It opens from the menu / helper bar instead ("在素材庫中定位").
+                  if (window.matchMedia('(max-width: 767px)').matches) return
+                  revealInLibrary(r)
                 }}
                 onSectionsCommit={(changes, label) => updateSections(projectId, studio.id, changes, label).catch((err) => notify((err as Error).message, true))}
                 onAddSection={(start, end) => addSection(projectId, studio, { name: nextSectionName(studio), start: Math.round(start * 1000) / 1000, end: Math.round(end * 1000) / 1000 })}
@@ -1215,6 +1223,7 @@ export function StudioView({
               <button type="button" data-haptic="tap" className="h-12 w-12 shrink-0 rounded-xl bg-white/10 text-lg" aria-label="往前微調" onClick={() => nudge(-1)}>◀</button>
               <button type="button" className="h-12 shrink-0 rounded-xl bg-white/[0.06] px-2 font-mono text-xs text-white/70" aria-label="微調步進" onClick={() => setNudgeStep((s) => (s === 0.01 ? 0.1 : s === 0.1 ? 1 : 0.01))}>{nudgeStep}s</button>
               <button type="button" data-haptic="tap" className="h-12 w-12 shrink-0 rounded-xl bg-white/10 text-lg" aria-label="往後微調" onClick={() => nudge(1)}>▶</button>
+              {selectedRegions[0]?.url && <button type="button" className="h-12 shrink-0 rounded-xl bg-white/10 px-3 text-sm font-semibold" onClick={() => regionAction('reveal')}>素材庫定位</button>}
               <button type="button" data-haptic="tap" className="h-12 shrink-0 rounded-xl bg-white/10 px-3 text-sm font-semibold" onClick={() => regionAction('duplicate')}>複製</button>
               <button type="button" data-haptic="strong" className="h-12 shrink-0 rounded-xl bg-panic/80 px-3 text-sm font-semibold text-white" onClick={() => regionAction('delete')}>刪除</button>
             </div>
