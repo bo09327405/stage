@@ -4,7 +4,20 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/stage/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <link rel="manifest" href="/stage/manifest.webmanifest" />
+    <link rel="manifest" href="/stage/manifest.webmanifest" id="app-manifest" />
+    <script>
+      // "Add to Home Screen" reopens the manifest's start_url, not the page you added: give each
+      // role (console / surface / studio) its own manifest so the app opens on the same view.
+      (function () {
+        var role = new URLSearchParams(location.search).get('role')
+        var names = { console: '控台', surface: '控制面板', studio: 'Studio' }
+        if (!names[role]) return
+        var link = document.getElementById('app-manifest')
+        link.href = link.getAttribute('href').replace('manifest.webmanifest', 'manifest-' + role + '.webmanifest')
+        var title = document.querySelector('meta[name="apple-mobile-web-app-title"]')
+        if (title) title.content = 'Cue ' + names[role]
+      })()
+    </script>
     <meta name="format-detection" content="telephone=no" />
     <meta name="theme-color" content="#121212" />
     <meta name="mobile-web-app-capable" content="yes" />
