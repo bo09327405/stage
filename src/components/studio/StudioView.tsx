@@ -303,6 +303,13 @@ export function StudioView({
     writePref('theatre.studio.tracksFolded', folded ? '1' : '0')
   }
   const folded = phone && tracksFolded
+  // Phones: the transport / master / toggle bar folds into a slim strip (play, timecode and a toggle).
+  const [barFolded, setBarFolded] = useState(() => readPref('theatre.studio.barFolded') !== '0')
+  const setBar = (folded: boolean) => {
+    setBarFolded(folded)
+    writePref('theatre.studio.barFolded', folded ? '1' : '0')
+  }
+  const barHidden = phone && barFolded
   const headerW = folded ? 44 : HEADER_W
   const [tab, setTab] = useState<InspectorTab>('props')
   // Below lg the side panel is a slide-out drawer over the timeline (always docked from lg up).
@@ -1030,48 +1037,73 @@ export function StudioView({
 
       {studio && (
         <>
-          <TransportBar
-            playing={playing}
-            loading={loading}
-            recording={recView ? { elapsed: recView.preview.elapsed, level: recView.level, channels: recView.channels } : null}
-            position={shownPlayhead}
-            length={length}
-            level={level}
-            master={
-              studio && (
-                <MasterStrip
-                  volume={studio.masterVolume}
-                  onVolume={(v, undim) => {
-                    // Moving the Master fader while DIM is on switches DIM off at that level.
-                    if (undim) setMonitor((m) => ({ ...m, dim: false }))
-                    setMasterVolume(projectId, studio.id, v).catch((err: Error) => notify(err.message, true))
-                  }}
-                  levels={levels}
-                  mute={monitor.mute}
-                  dim={monitor.dim}
-                  onMute={() => setMonitor((m) => ({ ...m, mute: !m.mute }))}
-                  onDim={() => setMonitor((m) => ({ ...m, dim: !m.dim }))}
-                  dimDb={studioDimDb}
-                  onDimDb={setStudioDimDb}
-                />
-              )
-            }
-            stereo={stereo}
-            automationMode={automationMode}
-            snap={snap}
-            onPlay={play}
-            onStop={stop}
-            onRewind={() => seek(0)}
-            onRecord={record}
-            onStereo={() => {
-              setStereo(!stereo)
-              writePref('theatre.studio.stereo', stereo ? '0' : '1')
-            }}
-            onAutomation={() => setAutomationMode(!automationMode)}
-            onSnap={() => setSnap(!snap)}
-            inputOpen={inputOpen}
-            onInput={toggleInputPanel}
-          />
+          {barHidden ? (
+            <div className="flex h-10 items-center gap-2 border-b border-line bg-[#141414] px-3 md:hidden" data-transport-folded>
+              <button type="button" onClick={() => setBar(false)} className="flex h-9 items-center gap-1 rounded-lg bg-white/10 px-3 text-xs font-semibold" aria-expanded="false" aria-label="展開控台" data-transport-toggle>
+                ▼ 展開控台
+              </button>
+              <button
+                type="button"
+                data-haptic="tap"
+                onClick={play}
+                className={`flex h-9 w-9 items-center justify-center rounded-lg text-base ${playing ? 'bg-go text-black' : 'bg-white/10 text-white'}`}
+                aria-label={playing ? '暫停' : '播放'}
+              >
+                {playing ? '❚❚' : '▶'}
+              </button>
+              <span className="font-mono text-base font-semibold tabular text-white" data-timecode>
+                {timecode(shownPlayhead)}
+              </span>
+            </div>
+          ) : (
+            <>
+            <TransportBar
+              playing={playing}
+              loading={loading}
+              recording={recView ? { elapsed: recView.preview.elapsed, level: recView.level, channels: recView.channels } : null}
+              position={shownPlayhead}
+              length={length}
+              level={level}
+              master={
+                studio && (
+                  <MasterStrip
+                    volume={studio.masterVolume}
+                    onVolume={(v, undim) => {
+                      // Moving the Master fader while DIM is on switches DIM off at that level.
+                      if (undim) setMonitor((m) => ({ ...m, dim: false }))
+                      setMasterVolume(projectId, studio.id, v).catch((err: Error) => notify(err.message, true))
+                    }}
+                    levels={levels}
+                    mute={monitor.mute}
+                    dim={monitor.dim}
+                    onMute={() => setMonitor((m) => ({ ...m, mute: !m.mute }))}
+                    onDim={() => setMonitor((m) => ({ ...m, dim: !m.dim }))}
+                    dimDb={studioDimDb}
+                    onDimDb={setStudioDimDb}
+                  />
+                )
+              }
+              stereo={stereo}
+              automationMode={automationMode}
+              snap={snap}
+              onPlay={play}
+              onStop={stop}
+              onRewind={() => seek(0)}
+              onRecord={record}
+              onStereo={() => {
+                setStereo(!stereo)
+                writePref('theatre.studio.stereo', stereo ? '0' : '1')
+              }}
+              onAutomation={() => setAutomationMode(!automationMode)}
+              onSnap={() => setSnap(!snap)}
+              inputOpen={inputOpen}
+              onInput={toggleInputPanel}
+            />
+            <button type="button" onClick={() => setBar(true)} className="flex h-7 w-full items-center justify-center gap-1 border-b border-line bg-[#101010] text-[11px] font-semibold text-white/55 md:hidden" aria-expanded="true" aria-label="收合控台" data-transport-toggle>
+              ▲ 收合控台
+            </button>
+            </>
+          )}
           <div className="flex min-h-0 flex-1">
             <div className="relative min-w-0 flex-1">
               <Arrange
