@@ -88,6 +88,9 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   // The whole top bar (nav, undo / redo, save state, Studio, Intercom, project, status line) can fold
   // away to give the cue list the full height; remembered per device. Folded, it takes no space.
   const bar = useHeaderCollapse(false, 'isConsoleBarCollapsed')
+  // In control mode the control panel's toolbar (surface picker, Panel / Executor, grid, Monitor, Notes,
+  // Stage, OSC / MIDI, edit) is merged into this bar, filling its free space: one bar, one fold button.
+  const [surfaceSlot, setSurfaceSlot] = useState<HTMLElement | null>(null)
   const { collapsed: barFolded, peek: barPeek, startPeek: peekBar } = bar
   useEffect(() => {
     if (!barFolded || barPeek) return
@@ -428,6 +431,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
           {!isLive && live && (
             <span className="truncate text-[11px] text-white/35">觀眾目前在：{live.projectName} · {live.versionName}</span>
           )}
+          {controlMode && <div ref={setSurfaceSlot} className="contents" data-surface-slot />}
           <span
             className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
               connected ? 'bg-go/15 text-go' : 'bg-panic/15 text-panic'
@@ -456,10 +460,10 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
           {(error || cueListError) && (
             <span className="truncate text-xs text-panic">{(error ?? cueListError)!.message}</span>
           )}
-          <span className="ml-auto hidden text-[11px] text-white/30 lg:block">
+          <span className={`ml-auto hidden text-[11px] text-white/30 ${controlMode ? '' : 'lg:block'}`}>
             ⌘Z 復原 · Space GO/Resume · P Pause · ↑↓ Standby · Esc Fade All · D DIM · M Mute · 1–8 Hits
           </span>
-          <span className="font-mono text-sm text-white/70 tabular">{clock}</span>
+          <span className={`font-mono text-sm text-white/70 tabular ${controlMode ? 'ml-auto' : ''}`}>{clock}</span>
           <button
             type="button"
             onClick={() => bar.setCollapsed(bar.peek ? false : true)}
@@ -521,6 +525,8 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
               hits={hits}
               router={router}
               variant="embedded"
+              mergeHeader
+              headerSlot={surfaceSlot}
               initialSurfaceId={readPref(`theatre.sidebarSurface.${show.projectId}`)}
               onSurfaceChange={(id) => id && writePref(`theatre.sidebarSurface.${show.projectId}`, id)}
             />

@@ -1,6 +1,7 @@
 import { dimGain } from '../../utils/dim'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { useTheatreEngine } from '../../hooks/useTheatreEngine'
 import type { useTriggerRouter } from '../../hooks/useTriggerRouter'
 import { useAutoConnectMidi, useMidi } from '../../services/midi'
@@ -73,6 +74,13 @@ interface SurfaceWorkspaceProps {
   /** Page-specific header content (back button, project name / intercom, triggers). */
   headerStart?: ReactNode
   headerEnd?: ReactNode
+  /**
+   * Merge this toolbar into a host bar instead of rendering its own: its items are portalled into
+   * `headerSlot` (an element of the host's flex row) and it neither folds nor draws a second bar.
+   * Nothing is drawn until the slot exists.
+   */
+  mergeHeader?: boolean
+  headerSlot?: HTMLElement | null
 }
 
 const readPref = (key: string) => {
@@ -133,6 +141,8 @@ export function SurfaceWorkspace({
   onSurfaceChange,
   headerStart,
   headerEnd,
+  mergeHeader = false,
+  headerSlot = null,
 }: SurfaceWorkspaceProps) {
   const sidebar = variant === 'sidebar'
   const { surfaces } = useSurfaces(show.projectId)
@@ -300,21 +310,8 @@ export function SurfaceWorkspace({
     defaultHeight: variant === 'sidebar' ? 230 : variant === 'embedded' ? 420 : 280,
   }
 
-  return (
-    <div className={`surface-touch relative flex flex-col bg-ink text-white ${variant === 'page' ? 'h-dvh' : 'h-full min-h-0'}`} data-header-collapsed={header.collapsed ? (header.peek ? 'peek' : 'hidden') : 'shown'}>
-      {/* With a mouse, the top edge brings a folded bar back for a moment. */}
-      {header.collapsed && !header.peek && <HeaderTab label="⌄ 選單" title="展開頂端列" expanded={false} onClick={() => header.setCollapsed(false)} folded />}
-      {/* Top bar (folds away in full screen) */}
-      <header
-        data-safe-header
-        className={`flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line backdrop-blur-xl ${sidebar ? 'px-3 py-2' : 'px-4 py-2'} ${
-          header.collapsed ? `absolute inset-x-0 top-0 z-[60] bg-panel/95 transition-transform duration-200 ${header.peek ? 'translate-y-0 shadow-2xl' : 'invisible pointer-events-none -translate-y-full'}` : 'relative z-40 bg-panel/70'
-        }`}
-        inert={header.collapsed && !header.peek}
-        onPointerEnter={(e) => e.pointerType === 'mouse' && header.startPeek()}
-        onPointerLeave={(e) => e.pointerType === 'mouse' && header.peek && header.endPeek()}
-        data-surface-header
-      >
+  const headerItems = (
+    <>
         {headerStart}
 
         {surfaces && surfaces.length > 0 && (
@@ -384,7 +381,7 @@ export function SurfaceWorkspace({
           </button>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className={`${mergeHeader ? '' : 'ml-auto'} flex items-center gap-2`}>
           {headerEnd}
           <button
             onClick={() => {
@@ -463,7 +460,7 @@ export function SurfaceWorkspace({
             </button>
           )}
         </div>
-        {(!header.collapsed || header.peek) && (
+        {!mergeHeader && (!header.collapsed || header.peek) && (
           <button
             type="button"
             onClick={() => header.setCollapsed(header.peek ? false : true)}
@@ -475,7 +472,32 @@ export function SurfaceWorkspace({
             {header.peek ? '📌 固定' : '⌃ 收合'}
           </button>
         )}
+    </>
+  )
+
+  return (
+    <div className={`surface-touch relative flex flex-col bg-ink text-white ${variant === 'page' ? 'h-dvh' : 'h-full min-h-0'}`} data-header-collapsed={header.collapsed ? (header.peek ? 'peek' : 'hidden') : 'shown'}>
+      {mergeHeader ? (
+        headerSlot && createPortal(headerItems, headerSlot)
+      ) : (
+        <>
+      {/* With a mouse, the top edge brings a folded bar back for a moment. */}
+      {!mergeHeader && header.collapsed && !header.peek && <HeaderTab label="⌄ 選單" title="展開頂端列" expanded={false} onClick={() => header.setCollapsed(false)} folded />}
+      {/* Top bar (folds away in full screen) */}
+      <header
+        data-safe-header
+        className={`flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line backdrop-blur-xl ${sidebar ? 'px-3 py-2' : 'px-4 py-2'} ${
+          header.collapsed ? `absolute inset-x-0 top-0 z-[60] bg-panel/95 transition-transform duration-200 ${header.peek ? 'translate-y-0 shadow-2xl' : 'invisible pointer-events-none -translate-y-full'}` : 'relative z-40 bg-panel/70'
+        }`}
+        inert={header.collapsed && !header.peek}
+        onPointerEnter={(e) => e.pointerType === 'mouse' && header.startPeek()}
+        onPointerLeave={(e) => e.pointerType === 'mouse' && header.peek && header.endPeek()}
+        data-surface-header
+      >
+          {headerItems}
       </header>
+        </>
+      )}
 
       {/* Edit toolbar */}
       <AnimatePresence>
