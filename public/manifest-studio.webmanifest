@@ -1,0 +1,19 @@
+{
+  "name": "Theatre Cue Studio",
+  "short_name": "Cue Studio",
+  "start_url": "./?role=studio",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#121212",
+  "theme_color": "#121212",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "id": "./?role=studio"
+}

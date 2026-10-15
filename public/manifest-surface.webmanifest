@@ -1,0 +1,19 @@
+{
+  "name": "Theatre Cue 控制面板",
+  "short_name": "Cue 控制面板",
+  "start_url": "./?role=surface",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#121212",
+  "theme_color": "#121212",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "id": "./?role=surface"
+}

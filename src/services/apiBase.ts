@@ -11,13 +11,30 @@ import { app } from './firebase'
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/+$/, '')
 const PREFIX = '/api/r2/'
 
-const rewrite = (u: string) => (BASE && u.startsWith(PREFIX) ? BASE + u : u)
+/**
+ * "/api/r2/…" → the Worker. Also fixes full addresses saved while developing (a LAN / ngrok host in
+ * front of the same path) so old library entries still resolve.
+ */
+const rewrite = (u: string) => {
+  if (!BASE) return u
+  if (u.startsWith(PREFIX)) return BASE + u
+  if (/^https?:\/\//i.test(u) && !u.startsWith(BASE)) {
+    try {
+      const x = new URL(u)
+      if (x.pathname.startsWith(PREFIX)) return BASE + x.pathname + x.search
+    } catch {
+      /* not a URL */
+    }
+  }
+  return u
+}
 
 if (BASE) {
   const auth = getAuth(app)
   const nativeFetch = window.fetch.bind(window)
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-    if (typeof input !== 'string' || !input.startsWith(PREFIX)) return nativeFetch(input, init)
+    const target = typeof input === 'string' ? rewrite(input) : ''
+    if (typeof input !== 'string' || !target.startsWith(BASE + PREFIX)) return nativeFetch(input, init)
     const headers = new Headers(init?.headers)
     try {
       const token = await auth.currentUser?.getIdToken()
@@ -25,7 +42,15 @@ if (BASE) {
     } catch {
       /* signed out: the Worker treats it as anonymous */
     }
-    return nativeFetch(rewrite(input), { ...init, headers, credentials: 'omit' })
+    try {
+      const res = await nativeFetch(target, { ...init, headers, credentials: 'omit' })
+      if (!res.ok) console.warn(`[R2] ${init?.method ?? 'GET'} ${target} → HTTP ${res.status}`)
+      return res
+    } catch (err) {
+      // "Failed to fetch" alone says nothing: name the address (CORS, offline, blocked or wrong host).
+      if ((err as Error).name !== 'AbortError') console.error(`[R2] ${init?.method ?? 'GET'} ${target} failed from ${location.origin}:`, err)
+      throw err instanceof TypeError ? new TypeError(`${err.message}（${target}）`) : err
+    }
   }
 
   // Media / image elements: React and the audio engine assign stored "/api/r2/o/…" strings to src.
