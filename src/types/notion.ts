@@ -72,6 +72,7 @@ export interface NotionPage {
 }
 
 export interface NotionError {
-  error: 'invalid_url' | 'not_public' | 'unreachable' | 'rate_limited'
+  /** preview_unavailable: this site has no preview server (static hosting such as GitHub Pages). */
+  error: 'invalid_url' | 'not_public' | 'unreachable' | 'rate_limited' | 'preview_unavailable'
   message: string
 }

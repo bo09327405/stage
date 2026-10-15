@@ -33,6 +33,8 @@ export function NotionUrlField({ value, onChange, autoFocus }: { value: string; 
             ✓ {state.page.icon ? `${state.page.icon} ` : ''}
             {state.page.title}
           </span>
+        ) : state.status === 'error' && state.error.error === 'preview_unavailable' ? (
+          <span className="text-white/50">✓ 已辨識 Notion 頁面 · 此環境無法預覽（仍可在 Notion 開啟）</span>
         ) : state.status === 'error' ? (
           <span className="text-standby">⚠ {state.error.message}</span>
         ) : (

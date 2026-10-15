@@ -109,15 +109,6 @@ export function ControlSidebar({
         headerStart={<span className="text-xs font-semibold tracking-wider text-white/50">🎛 控台</span>}
         headerEnd={
           <>
-            <a
-              href={`/surface?project=${show.projectId}&version=${show.versionId}`}
-              target="_blank"
-              rel="noreferrer"
-              className="flex min-h-10 items-center rounded-lg bg-white/[0.06] px-2.5 text-xs text-white/60 hover:bg-white/10 hover:text-white"
-              title="在新分頁開啟獨立的控制面板頁"
-            >
-              ↗
-            </a>
             <button
               onClick={onClose}
               className="flex min-h-10 w-10 items-center justify-center rounded-lg text-white/50 hover:bg-white/10 hover:text-white"

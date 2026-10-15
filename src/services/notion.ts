@@ -63,7 +63,21 @@ const AUTO_REFRESH_MS = 120_000
 // One request per page at a time, shared by every view showing it (panel + note buttons).
 const inflight = new Map<string, Promise<NotionPage>>()
 
+/**
+ * The preview is rendered by a server-side proxy (/api/notion in the dev / preview server). On static
+ * hosting (GitHub Pages) there is none: the path 404s or answers with the site's HTML. That is not an
+ * error to retry — it is "this environment has no preview", shown as a friendly card with an
+ * "open in Notion" button. Remembered so the page isn't asked again until the user taps retry.
+ */
+const UNAVAILABLE: NotionError = {
+  error: 'preview_unavailable',
+  message: '這個環境沒有 Notion 預覽服務（預覽需要在本機以 npm run dev 開啟）。你仍然可以在 Notion 直接開啟這個頁面。',
+}
+let previewUnavailable = false
+const staticHost = () => /\.github\.io$|\.pages\.dev$|\.netlify\.app$/i.test(location.hostname)
+
 async function fetchPage(id: string): Promise<NotionPage> {
+  if (previewUnavailable) throw UNAVAILABLE
   const running = inflight.get(id)
   if (running) return running
   const job = (async () => {
@@ -71,10 +85,21 @@ async function fetchPage(id: string): Promise<NotionPage> {
     try {
       res = await fetch(`/api/notion?id=${id}`)
     } catch {
+      if (staticHost()) {
+        previewUnavailable = true
+        throw UNAVAILABLE
+      }
       throw { error: 'unreachable', message: '無法連線到預覽服務，請確認 npm run dev 仍在執行' } satisfies NotionError
     }
     const body = (await res.json().catch(() => null)) as NotionPage | NotionError | null
-    if (!body) throw { error: 'unreachable', message: `預覽服務沒有回應（HTTP ${res.status}）。Notion 預覽需要透過 npm run dev / vite preview 開啟。` } satisfies NotionError
+    if (!body || res.status === 404 || res.status === 405) {
+      // Not JSON (the host's HTML 404 page) or no such route: there is no preview server here.
+      if (!body || staticHost()) {
+        previewUnavailable = true
+        throw UNAVAILABLE
+      }
+    }
+    if (!body) throw { error: 'unreachable', message: `預覽服務沒有回應（HTTP ${res.status}）。` } satisfies NotionError
     if ('error' in body) throw body
     return body
   })()
@@ -156,6 +181,7 @@ export function useNotionPage(url: string) {
   else state = { status: 'error', error: result.error!, retrying: result.willRetry }
 
   const refresh = useCallback(() => {
+    previewUnavailable = false // retry = ask once more
     retries.current.n = 0
     setNonce((n) => n + 1)
   }, [])

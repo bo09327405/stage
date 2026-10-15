@@ -3,9 +3,8 @@ import type { ShowRef } from '../types/project'
 /*
  * Moving between the Set Cue console and its pop-out pages (control panel, Studio).
  *
- * The console opens the control panel with window.open() under a per-project window name, so the
- * panel keeps a link back (window.opener) and a second click reuses the same tab. "返回 Set Cue"
- * then brings the console tab forward (pointing it at this project if it shows another one); when
+ * A pop-out page (control panel, Studio) keeps a link back to the console tab that opened it (window.opener).
+ * "返回 Set Cue" brings the console tab forward (pointing it at this project if it shows another one); when
  * that tab is gone — or the panel was opened some other way — this tab loads the console itself.
  * A BroadcastChannel lets console tabs of the project raise themselves too.
  */
@@ -17,16 +16,6 @@ const basePath = () => location.pathname.replace(/\/(surface|control-panel)\/?$/
 
 export const consoleUrl = (show: ShowRef) =>
   `${basePath()}?role=console&project=${encodeURIComponent(show.projectId)}&version=${encodeURIComponent(show.versionId)}`
-
-export const surfaceUrl = (show: ShowRef, surfaceId?: string | null) =>
-  `${basePath().replace(/\/$/, '')}/surface?project=${encodeURIComponent(show.projectId)}&version=${encodeURIComponent(show.versionId)}${surfaceId ? `&surface=${encodeURIComponent(surfaceId)}` : ''}`
-
-/** Open (or bring back) this project's control panel tab, keeping the link to this console tab. */
-export function openSurfaceWindow(show: ShowRef) {
-  const w = window.open(surfaceUrl(show), `theatre-surface-${show.projectId}`)
-  w?.focus()
-  return !!w
-}
 
 /** Is `w` a console tab of this project? (Same origin only; false when it can't be read.) */
 function showsConsole(w: Window, show: ShowRef) {

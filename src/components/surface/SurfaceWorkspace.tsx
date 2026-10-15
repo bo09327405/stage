@@ -96,7 +96,7 @@ function HeaderTab({ label, title, expanded, onClick, folded = false }: { label:
     <button
       type="button"
       onClick={onClick}
-      className={`absolute left-1/2 z-[61] flex h-6 pointer-coarse:h-9 pointer-coarse:px-5 pointer-coarse:text-xs -translate-x-1/2 items-center gap-1 rounded-b-xl border border-t-0 border-line bg-panel/95 px-3 text-[11px] whitespace-nowrap text-white/55 shadow-lg backdrop-blur-xl transition before:absolute before:-inset-x-3 before:-inset-y-3 before:content-[''] hover:text-white ${folded ? 'top-0 opacity-70 hover:opacity-100' : 'top-full'}`}
+      className={`absolute left-1/2 z-[61] flex h-6 pointer-coarse:h-9 pointer-coarse:px-5 pointer-coarse:text-xs -translate-x-1/2 items-center gap-1 rounded-b-xl border border-t-0 border-line bg-panel/95 px-3 text-[11px] whitespace-nowrap text-white/55 shadow-lg backdrop-blur-xl transition hover:text-white ${folded ? 'top-0 opacity-70 hover:opacity-100' : 'top-full'}`}
       aria-label={title}
       aria-expanded={expanded}
       title={title}
@@ -199,6 +199,15 @@ export function SurfaceWorkspace({
   const [density, setDensity] = useGridDensity(surface?.id ?? null)
   const { isFullscreen } = useFullscreen()
   const header = useHeaderCollapse(isFullscreen)
+  // A mouse at the very top edge brings a folded bar back for a moment. (A listener, not an overlay:
+  // nothing sits on top of the controls below, so every tap lands on the control it was aimed at.)
+  const { collapsed: barFolded, peek: barPeek, startPeek } = header
+  useEffect(() => {
+    if (!barFolded || barPeek) return
+    const onMove = (e: PointerEvent) => e.pointerType === 'mouse' && e.clientY <= 2 && startPeek()
+    window.addEventListener('pointermove', onMove, { passive: true })
+    return () => window.removeEventListener('pointermove', onMove)
+  }, [barFolded, barPeek, startPeek])
   const [execSidebar, setExecSidebar] = useExecSidebar()
   // Executor playback runs whenever the panel is open (Follow / Time keep going in either view).
   const exec = useExecutors({ engine, surface, cues, hits })
@@ -294,13 +303,12 @@ export function SurfaceWorkspace({
   return (
     <div className={`surface-touch relative flex flex-col bg-ink text-white ${variant === 'page' ? 'h-dvh' : 'h-full min-h-0'}`} data-header-collapsed={header.collapsed ? (header.peek ? 'peek' : 'hidden') : 'shown'}>
       {/* With a mouse, the top edge brings a folded bar back for a moment. */}
-      {header.collapsed && !header.peek && <div className="absolute inset-x-0 top-0 z-[59] h-1.5" onPointerEnter={(e) => e.pointerType === 'mouse' && header.startPeek()} aria-hidden data-header-hotzone />}
       {header.collapsed && !header.peek && <HeaderTab label="⌄ 選單" title="展開頂端列" expanded={false} onClick={() => header.setCollapsed(false)} folded />}
       {/* Top bar (folds away in full screen) */}
       <header
         data-safe-header
         className={`flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line backdrop-blur-xl ${sidebar ? 'px-3 py-2' : 'px-4 py-2'} ${
-          header.collapsed ? `absolute inset-x-0 top-0 z-[60] bg-panel/95 shadow-2xl transition-transform duration-200 ${header.peek ? 'translate-y-0' : '-translate-y-full'}` : 'relative z-40 bg-panel/70'
+          header.collapsed ? `absolute inset-x-0 top-0 z-[60] bg-panel/95 transition-transform duration-200 ${header.peek ? 'translate-y-0 shadow-2xl' : 'invisible pointer-events-none -translate-y-full'}` : 'relative z-40 bg-panel/70'
         }`}
         inert={header.collapsed && !header.peek}
         onPointerEnter={(e) => e.pointerType === 'mouse' && header.startPeek()}
@@ -322,14 +330,6 @@ export function SurfaceWorkspace({
             ))}
           </select>
         )}
-        <button
-          onClick={() => setNaming('create')}
-          className="min-h-10 rounded-lg bg-white/[0.06] px-3 text-xs text-white/70 hover:bg-white/10"
-          title="新增控制面板"
-        >
-          {sidebar ? '＋' : '＋ 新控台'}
-        </button>
-
         <span
           className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold tracking-wider ${
             playback === 'paused' ? 'bg-standby text-black' : playback === 'playing' ? 'bg-go/20 text-go' : 'bg-white/10 text-white/40'
@@ -464,8 +464,16 @@ export function SurfaceWorkspace({
           )}
         </div>
         {(!header.collapsed || header.peek) && (
-          // Hangs below the bar: fold it away, or pin a peeked bar open.
-          <HeaderTab label={header.peek ? '📌 固定' : '⌃ 收合'} title={header.peek ? '固定顯示頂端列' : '收合頂端列（釋放更多空間）'} expanded onClick={() => header.setCollapsed(header.peek ? false : true)} />
+          <button
+            type="button"
+            onClick={() => header.setCollapsed(header.peek ? false : true)}
+            className="ml-auto flex min-h-10 items-center gap-1 rounded-lg bg-white/[0.06] px-3 text-xs text-white/60 hover:bg-white/10 hover:text-white"
+            aria-label={header.peek ? '固定顯示頂端列' : '收合頂端列'}
+            title={header.peek ? '固定顯示頂端列' : '收合頂端列（釋放更多空間）'}
+            data-header-toggle="shown"
+          >
+            {header.peek ? '📌 固定' : '⌃ 收合'}
+          </button>
         )}
       </header>
 

@@ -1,6 +1,6 @@
 import { DEFAULT_DIM_DB, clampDimDb, useDimDb } from '../../utils/dim'
 import { StudioMenu } from './StudioMenu'
-import { listenForFocusRequests, openSurfaceWindow, surfaceUrl } from '../../services/navigation'
+import { listenForFocusRequests } from '../../services/navigation'
 import { useProjectLock } from '../../services/projectLock'
 import { useAuth } from '../../services/auth'
 import { AnimatePresence, motion } from 'motion/react'
@@ -355,21 +355,6 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
             </>
           )}
           <FullscreenButton />
-          <a
-            href={surfaceUrl(show)}
-            target={`theatre-surface-${show.projectId}`}
-            onClick={(e) => {
-              // window.open keeps the link back to this tab (for "返回 Set Cue"); reuses the panel tab.
-              if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
-              e.preventDefault()
-              openSurfaceWindow(show)
-            }}
-            className="flex min-h-10 items-center rounded-lg bg-white/[0.06] px-2.5 text-xs text-white/60 hover:bg-white/10 hover:text-white"
-            title="在新分頁開啟獨立的控制面板頁（可用「返回 Set Cue」切回這裡）"
-            data-open-surface
-          >
-            控制面板 新分頁 ↗
-          </a>
           <StudioMenu show={show} user={user} readOnly={lock.readOnly} />
           <IntercomButton intercom={intercom} onClick={() => setIntercomOpen(!intercomOpen)} />
           <button

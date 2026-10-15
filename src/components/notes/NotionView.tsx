@@ -84,6 +84,30 @@ export function NotionView({ url, fontScale = 1, compact = false, renderText = (
 
   if (state.status === 'error') {
     const { error } = state
+    if (error.error === 'preview_unavailable') {
+      // Static hosting: no preview server. A calm card, with "open in Notion" as the main action.
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center" data-notion-unavailable>
+          <span className="text-3xl" aria-hidden>
+            🗒️
+          </span>
+          <p className="text-sm font-semibold text-white/85">Notion 預覽僅限本機版</p>
+          <p className="max-w-xs text-xs leading-relaxed text-white/50">這個環境（例如 GitHub Pages）沒有預覽服務，無法在這裡顯示頁面內容。請直接在 Notion 開啟。</p>
+          <a
+            href={openHref}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-accent px-5 text-sm font-semibold text-white hover:brightness-110"
+            data-notion-open
+          >
+            ↗ 在 Notion 獨立分頁開啟
+          </a>
+          <button type="button" onClick={refresh} className="min-h-9 rounded-lg px-3 text-[11px] text-white/40 hover:bg-white/10 hover:text-white/70">
+            ↻ 重新檢查
+          </button>
+        </div>
+      )
+    }
     return (
       <Message
         icon={error.error === 'not_public' ? '🔒' : error.error === 'rate_limited' ? '⏳' : '⚠️'}
