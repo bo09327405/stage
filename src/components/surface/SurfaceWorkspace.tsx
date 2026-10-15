@@ -104,7 +104,7 @@ function HeaderTab({ label, title, expanded, onClick, folded = false }: { label:
     <button
       type="button"
       onClick={onClick}
-      className={`absolute left-1/2 z-[61] flex h-6 pointer-coarse:h-9 pointer-coarse:px-5 pointer-coarse:text-xs -translate-x-1/2 items-center gap-1 rounded-b-xl border border-t-0 border-line bg-panel/95 px-3 text-[11px] whitespace-nowrap text-white/55 shadow-lg backdrop-blur-xl transition hover:text-white ${folded ? 'top-0 opacity-70 hover:opacity-100' : 'top-full'}`}
+      className={`absolute right-[max(0.75rem,env(safe-area-inset-right,0px))] z-[61] flex h-6 pointer-coarse:h-9 pointer-coarse:px-5 pointer-coarse:text-xs items-center gap-1 rounded-b-xl border border-t-0 border-line bg-panel/95 px-3 text-[11px] whitespace-nowrap text-white/55 shadow-lg backdrop-blur-xl transition hover:text-white ${folded ? 'top-0 opacity-70 hover:opacity-100' : 'top-full'}`}
       aria-label={title}
       aria-expanded={expanded}
       title={title}

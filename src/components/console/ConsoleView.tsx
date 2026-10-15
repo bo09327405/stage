@@ -305,7 +305,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
           <button
             type="button"
             onClick={() => bar.setCollapsed(false)}
-            className="absolute top-0 left-1/2 z-[61] flex h-6 -translate-x-1/2 items-center gap-1 rounded-b-xl border border-t-0 border-line bg-panel/95 px-3 text-[11px] whitespace-nowrap text-white/55 opacity-70 shadow-lg backdrop-blur-xl transition hover:text-white hover:opacity-100 pointer-coarse:h-9 pointer-coarse:px-5 pointer-coarse:text-xs"
+            className="absolute top-0 right-[max(0.75rem,env(safe-area-inset-right,0px))] z-[61] flex h-6 items-center gap-1 rounded-b-xl border border-t-0 border-line bg-panel/95 px-3 text-[11px] whitespace-nowrap text-white/55 opacity-70 shadow-lg backdrop-blur-xl transition hover:text-white hover:opacity-100 pointer-coarse:h-9 pointer-coarse:px-5 pointer-coarse:text-xs"
             aria-label="展開頂端列"
             aria-expanded="false"
             data-header-toggle="folded"
