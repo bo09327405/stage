@@ -13,6 +13,7 @@ import {
   type Cue,
 } from '../types/cue'
 import { prepareStudioMix, studioMixUrl } from '../studio/cueMix'
+import { setNowPlaying, startBackgroundPlayback, startTicker } from './backgroundAudio'
 
 /**
  * Audience-side playback for AUDIO/VIDEO cues and hits.
@@ -160,7 +161,9 @@ export class StageAudioEngine {
     setTimeout(() => URL.revokeObjectURL(silent), 5000)
 
     ctx.resume().catch(() => {})
-    window.setInterval(() => this.tick(), TICK_MS)
+    // Gesture-time setup for background / lock-screen playback, and a ticker the OS won't throttle.
+    startBackgroundPlayback(ctx, () => this.resume())
+    startTicker(TICK_MS, () => this.tick())
   }
 
   /** Retry after the browser blocked playback (call from a gesture). */
@@ -289,6 +292,8 @@ export class StageAudioEngine {
     this.active = active
     if (!this.ctx) return
     this.paused = pausedAt != null
+    const playing = Object.values(active).find((d) => isMediaCue(d.cue) && d.stopAt == null && cueTargets(d.cue, this.audienceId))
+    setNowPlaying(playing?.cue.title ?? null)
 
     for (const inst of Object.values(active)) {
       if (!isMediaCue(inst.cue) || !(inst.cue.targetUrl || inst.cue.studioId) || !cueTargets(inst.cue, this.audienceId)) continue

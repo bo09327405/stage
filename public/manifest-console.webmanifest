@@ -1,7 +1,7 @@
 {
   "name": "Theatre Cue 控台",
   "short_name": "Cue 控台",
-  "start_url": "./?role=console",
+  "start_url": "./console.html?role=console",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
@@ -15,5 +15,5 @@
       "purpose": "any"
     }
   ],
-  "id": "./?role=console"
+  "id": "./console.html"
 }

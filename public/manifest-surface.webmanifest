@@ -1,7 +1,7 @@
 {
   "name": "Theatre Cue 控制面板",
   "short_name": "Cue 控制面板",
-  "start_url": "./?role=surface",
+  "start_url": "./surface.html?role=surface",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
@@ -15,5 +15,5 @@
       "purpose": "any"
     }
   ],
-  "id": "./?role=surface"
+  "id": "./surface.html"
 }
