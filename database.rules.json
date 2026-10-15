@@ -24,6 +24,7 @@
       }
     },
     "projects": {
+      ".read": "(auth != null && auth.token.email_verified == true && (auth.token.email.toLowerCase() == 'bo0912013792@gmail.com' || auth.token.email.toLowerCase() == 'bo09327405@mail2.chshs.ntpc.edu.tw'))",
       "$pid": {
         ".read": "((auth != null && auth.token.email_verified == true && (auth.token.email.toLowerCase() == 'bo0912013792@gmail.com' || auth.token.email.toLowerCase() == 'bo09327405@mail2.chshs.ntpc.edu.tw')) || (auth != null && (root.child('projectIndex').child($pid).child('owner/uid').val() == auth.uid || root.child('projectIndex').child($pid).child('collaborators').child(auth.uid).exists())) || (auth != null && root.child('projectIndex').child($pid).child('isMasterTemplate').val() == true))",
         ".write": "(auth != null && auth.token.email_verified == true && (auth.token.email.toLowerCase() == 'bo0912013792@gmail.com' || auth.token.email.toLowerCase() == 'bo09327405@mail2.chshs.ntpc.edu.tw'))",
@@ -100,11 +101,21 @@
     },
     "sharedMedia": {
       ".read": "auth != null",
-      ".write": "(auth != null && auth.token.email_verified == true && (auth.token.email.toLowerCase() == 'bo0912013792@gmail.com' || auth.token.email.toLowerCase() == 'bo09327405@mail2.chshs.ntpc.edu.tw'))"
+      ".write": "(auth != null && auth.token.email_verified == true && (auth.token.email.toLowerCase() == 'bo0912013792@gmail.com' || auth.token.email.toLowerCase() == 'bo09327405@mail2.chshs.ntpc.edu.tw'))",
+      "default": {
+        "$id": {
+          ".write": "((auth != null && auth.token.email_verified == true && (auth.token.email.toLowerCase() == 'bo0912013792@gmail.com' || auth.token.email.toLowerCase() == 'bo09327405@mail2.chshs.ntpc.edu.tw')) || (auth != null && !data.exists() && newData.exists()))"
+        }
+      }
     },
     "sharedStudioFiles": {
       ".read": "auth != null",
-      ".write": "(auth != null && auth.token.email_verified == true && (auth.token.email.toLowerCase() == 'bo0912013792@gmail.com' || auth.token.email.toLowerCase() == 'bo09327405@mail2.chshs.ntpc.edu.tw'))"
+      ".write": "(auth != null && auth.token.email_verified == true && (auth.token.email.toLowerCase() == 'bo0912013792@gmail.com' || auth.token.email.toLowerCase() == 'bo09327405@mail2.chshs.ntpc.edu.tw'))",
+      "default": {
+        "$id": {
+          ".write": "((auth != null && auth.token.email_verified == true && (auth.token.email.toLowerCase() == 'bo0912013792@gmail.com' || auth.token.email.toLowerCase() == 'bo09327405@mail2.chshs.ntpc.edu.tw')) || (auth != null && !data.exists() && newData.exists()))"
+        }
+      }
     },
     "audienceMedia": {
       ".read": "auth != null",

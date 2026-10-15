@@ -110,6 +110,8 @@ const rules = {
     },
 
     projects: {
+      // The admin file manager reads the whole node (every project's media); members only get their own $pid.
+      '.read': isAdmin,
       $pid: {
         '.read': or(isAdmin, member, templateReader),
         // Only admins write at the project root — i.e. only they can remove a whole project.
@@ -199,8 +201,9 @@ const rules = {
 
     // Shared libraries (cross-project by design): any signed-in operator.
     // The Default shared libraries (files on R2): everyone signed in reads, admins manage.
-    sharedMedia: { '.read': 'auth != null', '.write': isAdmin },
-    sharedStudioFiles: { '.read': 'auth != null', '.write': isAdmin },
+    // Default shared libraries: admins manage them; any signed-in user may add an entry (create only).
+    sharedMedia: { '.read': 'auth != null', '.write': isAdmin, default: { $id: { '.write': or(isAdmin, and('auth != null', '!data.exists()', 'newData.exists()')) } } },
+    sharedStudioFiles: { '.read': 'auth != null', '.write': isAdmin, default: { $id: { '.write': or(isAdmin, and('auth != null', '!data.exists()', 'newData.exists()')) } } },
 
     // Audience uploads (Cloudinary), indexed across projects so every project can use them: any
     // signed-in operator reads; the audience adds entries (create only); members of the project

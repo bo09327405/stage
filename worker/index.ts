@@ -33,6 +33,8 @@ const TYPES: Record<string, string> = {
   json: 'application/json', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
 }
 const typeOf = (key: string) => TYPES[key.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream'
+/** Any signed-in user may add files to the shared Default folders (deleting stays admin-only). */
+const isDefaultKey = (key: string) => mediaFolderOf(key) === 'Default'
 const mediaFolderOf = (key: string) => /^theatre\/(?:daw|cues|hits)\/([^/]+)\//.exec(key)?.[1] ?? null
 
 function corsHeaders(req: Request, env: Env, open = false): Headers {
@@ -165,7 +167,7 @@ async function handle(req: Request, env: Env, url: URL): Promise<Response> {
     const owner = projectOfKey(key)
     if (owner && !(await access.canWrite(owner.pid, caller))) return json(403, { error: '沒有權限：不是專案成員，或專案已鎖定為唯讀' })
     const folder = mediaFolderOf(key)
-    if (folder && !(await access.isAdmin(caller)) && !(await access.writableFolders(caller)).has(folder)) return json(403, { error: '沒有權限上傳到這個專案（專案已鎖定為唯讀，或你不是成員）' })
+    if (folder && !isDefaultKey(key) && !(await access.isAdmin(caller)) && !(await access.writableFolders(caller)).has(folder)) return json(403, { error: '沒有權限上傳到這個專案（專案已鎖定為唯讀，或你不是成員）' })
     const declared = Number(req.headers.get('content-length') ?? 0)
     if (declared > MAX_UPLOAD) return json(413, { error: '檔案太大（上限 250 MB）' })
     const body = await req.arrayBuffer()
@@ -181,7 +183,7 @@ async function handle(req: Request, env: Env, url: URL): Promise<Response> {
     if (!validKey(key)) return json(400, { error: '檔案路徑不合法（必須在 theatre/ 底下）' })
     if (!(await access.signedIn(caller))) return json(401, { error: '請先登入' })
     const target = mediaFolderOf(key)
-    if (!(await access.isAdmin(caller)) && (!target || !(await access.writableFolders(caller)).has(target))) return json(403, { error: '沒有權限匯入到這個專案（專案已鎖定為唯讀，或你不是成員）' })
+    if (!isDefaultKey(key) && !(await access.isAdmin(caller)) && (!target || !(await access.writableFolders(caller)).has(target))) return json(403, { error: '沒有權限匯入到這個專案（專案已鎖定為唯讀，或你不是成員）' })
     let source: URL | null = null
     try {
       const u = new URL(url.searchParams.get('url') ?? '')

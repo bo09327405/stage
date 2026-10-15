@@ -382,7 +382,7 @@ export function r2Proxy(opts: R2Options): Plugin {
       const owner = projectOfKey(key)
       if (owner && !(await access.canWrite(owner.pid, caller))) return json(res, 403, { error: '沒有權限：不是專案成員，或專案已鎖定為唯讀' })
       const folder = mediaFolderOf(key)
-      if (folder && !(await access.isAdmin(caller)) && !(await access.writableFolders(caller)).has(folder)) return json(res, 403, { error: '沒有權限上傳到這個專案（專案已鎖定為唯讀，或你不是成員）' })
+      if (folder && folder !== 'Default' && !(await access.isAdmin(caller)) && !(await access.writableFolders(caller)).has(folder)) return json(res, 403, { error: '沒有權限上傳到這個專案（專案已鎖定為唯讀，或你不是成員）' })
       try {
         const body = await readBody(req)
         const contentType = /^(audio|video|image)\/[\w.+-]+$|^application\/json$/.test(req.headers['content-type'] ?? '') ? req.headers['content-type']! : typeOf(key)
@@ -401,7 +401,7 @@ export function r2Proxy(opts: R2Options): Plugin {
       const importer = callerOf(req)
       if (!(await access.signedIn(importer))) return json(res, 401, { error: '請先登入' })
       const target = mediaFolderOf(key)
-      if (!(await access.isAdmin(importer)) && (!target || !(await access.writableFolders(importer)).has(target))) return json(res, 403, { error: '沒有權限匯入到這個專案（專案已鎖定為唯讀，或你不是成員）' })
+      if (target !== 'Default' && !(await access.isAdmin(importer)) && (!target || !(await access.writableFolders(importer)).has(target))) return json(res, 403, { error: '沒有權限匯入到這個專案（專案已鎖定為唯讀，或你不是成員）' })
       const source = importable(url.searchParams.get('url') ?? '')
       if (!source) return json(res, 400, { error: '只能匯入本帳號 Cloudinary 的檔案（https://res.cloudinary.com/…）' })
       try {
