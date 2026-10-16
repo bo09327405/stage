@@ -1,4 +1,13 @@
 /** Timecode m:ss.mmm (or h:mm:ss.mmm). */
+/** "1:23.456", "0:16", "1:02:03.5" or plain seconds → seconds, or null when it isn't a time. */
+export function parseTimecode(text: string): number | null {
+  const parts = text.trim().replace(/,/g, '.').split(':')
+  if (parts.length === 0 || parts.length > 3 || parts.some((p) => !/^\d+(\.\d*)?$|^\.\d+$/.test(p))) return null
+  const nums = parts.map(Number)
+  const seconds = nums.reduce((total, n) => total * 60 + n, 0)
+  return Number.isFinite(seconds) ? seconds : null
+}
+
 export function timecode(seconds: number, ms = true) {
   const s = Math.max(0, seconds)
   const h = Math.floor(s / 3600)

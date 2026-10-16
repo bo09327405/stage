@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { PEAK_RESOLUTION, bufferOffset, peaksOf, regionBuffer } from '../../studio/audio'
-import { clampZoom, dbLabel, rulerLabel, rulerStep } from '../../studio/format'
+import { clampZoom, dbLabel, rulerLabel, rulerStep, timecode } from '../../studio/format'
 import { AutomationNodeEditor, AutomationNodeMenu, type NodeInfo } from './AutomationNodeMenu'
 import { bendHandles, handlesFromControls, resetShape, segmentControls, shapeOf, type PresetShape, type Range } from '../../studio/curves'
 import { CurveLayer, CurveToolbar } from './CurveEditor'
@@ -30,7 +30,7 @@ export const HEADER_W = 232
 /** Touch screens get taller lanes: the track header needs 44 px mute / solo / fader targets. */
 export const LANE_H = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? 132 : 92
 const RULER_H = 30
-const SECTION_H = 26
+const SECTION_H = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? 44 : 26
 /** Height of a track automation lane. */
 export const AUTO_H = 64
 const AUTO_PAD = 7
@@ -104,6 +104,9 @@ interface ArrangeProps {
   recording: RecordingPreview | null
   following: boolean
   renderHeader: (track: StudioTrack) => ReactNode
+  /** The selected timeline section (its handles show; the Section helper bar acts on it). */
+  selectedSection?: string | null
+  onSelectSection?: (id: string | null) => void
   /** Per-clip undo (the last 10 edits of one clip). */
   canUndoRegion?: (id: string) => boolean
   onUndoRegion?: (id: string) => void
@@ -356,6 +359,7 @@ export function Arrange(props: ArrangeProps) {
     | { kind: 'curve'; what: CurveGrab; index: number; origin: StudioPoint[]; spec: CurveSpec; x: number; y: number; moved: boolean; latest: StudioPoint[] | null }
   const gesture = useRef<Gesture | null>(null)
   // Floating readout while a clip's volume is dragged, and the fade-curve picker (long-press on a fade node).
+  const [secTip, setSecTip] = useState<{ x: number; y: number; text: string } | null>(null)
   const [gainTip, setGainTip] = useState<{ x: number; y: number; text: string } | null>(null)
   const [shapeMenu, setShapeMenu] = useState<{ id: string; kind: 'in' | 'out'; x: number; y: number } | null>(null)
   const draftsRef = useRef<Drafts | null>(null)
@@ -426,9 +430,36 @@ export function Arrange(props: ArrangeProps) {
     gesture.current = { kind: 'node', id: r.id, index, origin: r, height: rect.height, rectTop: rect.top, rectLeft: rect.left, moved: false }
   }
 
+  /**
+   * Pressing a section selects it (its big handles and the Section helper bar appear). Touch: an
+   * unselected section only taps to select (a drag on it scrolls the timeline); a selected one — or one
+   * of its handles — drags. Movement under 5 px never counts as a drag.
+   */
   const beginSection = (e: PointerEvent, sec: StudioSection, kind: 'sec-move' | 'sec-l' | 'sec-r') => {
     if (e.button !== 0 || renaming) return
     e.stopPropagation()
+    const wasSelected = props.selectedSection === sec.id
+    if (kind === 'sec-move' && e.pointerType !== 'mouse' && !wasSelected) {
+      const from = { x: e.clientX, y: e.clientY, id: e.pointerId }
+      const finish = (up: globalThis.PointerEvent, cancelled: boolean) => {
+        window.removeEventListener('pointerup', onUp)
+        window.removeEventListener('pointercancel', onCancel)
+        if (!cancelled && up.pointerId === from.id && Math.hypot(up.clientX - from.x, up.clientY - from.y) < 6) {
+          onSelect([])
+          props.onSelectSection?.(sec.id)
+          navigator.vibrate?.(10)
+        }
+      }
+      const onUp = (up: globalThis.PointerEvent) => finish(up, false)
+      const onCancel = (up: globalThis.PointerEvent) => finish(up, true)
+      window.addEventListener('pointerup', onUp)
+      window.addEventListener('pointercancel', onCancel)
+      return
+    }
+    if (!wasSelected) {
+      onSelect([])
+      props.onSelectSection?.(sec.id)
+    }
     e.currentTarget.setPointerCapture(e.pointerId)
     gesture.current = { kind, x: e.clientX, id: sec.id, origin: sec, moved: false }
   }
@@ -507,7 +538,7 @@ export function Arrange(props: ArrangeProps) {
       return
     }
     if (g.kind === 'sec-move' || g.kind === 'sec-l' || g.kind === 'sec-r') {
-      if (!g.moved && Math.abs(e.clientX - g.x) < 3) return
+      if (!g.moved && Math.abs(e.clientX - g.x) < 5) return
       g.moved = true
       const o = g.origin
       const d = (e.clientX - g.x) / zoom
@@ -519,6 +550,7 @@ export function Arrange(props: ArrangeProps) {
       else patch = { end: Math.max(o.start + 0.25, snapTime(o.end + d, [o.id])) }
       for (const k of ['start', 'end'] as const) if (patch[k] !== undefined) patch[k] = Math.round(patch[k]! * 1000) / 1000
       setSecDrafts({ [o.id]: patch })
+      setSecTip({ x: e.clientX, y: e.clientY, text: `${timecode(patch.start ?? o.start)} → ${timecode(patch.end ?? o.end)}` })
       return
     }
     if (g.kind === 'anode') {
@@ -601,7 +633,9 @@ export function Arrange(props: ArrangeProps) {
       gesture.current = null
       const d = secDrafts?.[g.id]
       setSecDrafts(null)
+      setSecTip(null)
       if (!g.moved || !d) return // a plain click on a section does not move the playhead
+      navigator.vibrate?.(10)
       props.onSectionsCommit([{ id: g.id, patch: d }], g.kind === 'sec-move' ? `移動區段「${g.origin.name}」` : `調整區段「${g.origin.name}」長度`)
       return
     }
@@ -841,7 +875,7 @@ export function Arrange(props: ArrangeProps) {
             {sections.map((sec) => (
               <div
                 key={sec.id}
-                className="group absolute top-[3px] bottom-[3px] flex cursor-grab items-center overflow-hidden rounded-[5px] px-2 text-[11px] font-bold text-white shadow-sm active:cursor-grabbing"
+                className={`group absolute top-[3px] bottom-[3px] flex cursor-grab items-center overflow-hidden rounded-[5px] px-2 text-[11px] font-bold text-white shadow-sm active:cursor-grabbing ${props.selectedSection === sec.id ? 'touch-none ring-2 ring-white' : 'touch-pan-x touch-pan-y'}`}
                 style={{ left: sec.start * zoom, width: Math.max(8, (sec.end - sec.start) * zoom), background: sec.color }}
                 onPointerDown={(e) => beginSection(e, sec, 'sec-move')}
                 onDoubleClick={(e) => {
@@ -852,7 +886,7 @@ export function Arrange(props: ArrangeProps) {
                   e.preventDefault()
                   props.onSectionMenu(sec, e.clientX, e.clientY)
                 }}
-                title={`${sec.name}（${(sec.end - sec.start).toFixed(2)}s）· 點擊跳到開頭 · 雙擊改名 · 右鍵更多`}
+                title={`${sec.name}（${(sec.end - sec.start).toFixed(2)}s）· 點擊選取 · 雙擊改名 · 右鍵更多`}
                 data-section={sec.id}
               >
                 {renaming?.id === sec.id ? (
@@ -881,6 +915,28 @@ export function Arrange(props: ArrangeProps) {
                 <span className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize hover:bg-white/50" onPointerDown={(e) => beginSection(e, sec, 'sec-r')} data-section-edge="r" />
               </div>
             ))}
+            {sections
+              .filter((sec) => sec.id === props.selectedSection)
+              .map((sec) => (
+                <div key={`${sec.id}-handles`} className="pointer-events-none absolute inset-y-0 z-20" style={{ left: sec.start * zoom, width: Math.max(8, (sec.end - sec.start) * zoom) }} data-section-handles>
+                  <div
+                    className="pointer-events-auto absolute inset-y-0 -left-[22px] flex w-11 cursor-ew-resize touch-none items-center justify-center"
+                    onPointerDown={(e) => beginSection(e, sec, 'sec-l')}
+                    aria-label="拖曳調整區段起點"
+                    data-section-handle="l"
+                  >
+                    <span className="h-5 w-3 rounded-full bg-white shadow ring-1 ring-black/60 pointer-coarse:h-7" />
+                  </div>
+                  <div
+                    className="pointer-events-auto absolute inset-y-0 -right-[22px] flex w-11 cursor-ew-resize touch-none items-center justify-center"
+                    onPointerDown={(e) => beginSection(e, sec, 'sec-r')}
+                    aria-label="拖曳調整區段終點"
+                    data-section-handle="r"
+                  >
+                    <span className="h-5 w-3 rounded-full bg-white shadow ring-1 ring-black/60 pointer-coarse:h-7" />
+                  </div>
+                </div>
+              ))}
           </div>
         </div>
         </div>
@@ -914,6 +970,7 @@ export function Arrange(props: ArrangeProps) {
                   // Clicks in the clip area are clip / track operations: the playhead only moves from the ruler.
                   onSelectTrack(track.id)
                   onSelect([])
+                  props.onSelectSection?.(null)
                 }}
                 onContextMenu={(e) => {
                   if (e.target !== e.currentTarget) return
@@ -1061,6 +1118,16 @@ export function Arrange(props: ArrangeProps) {
           }}
           onClose={() => setNodeEditing(null)}
         />
+      )}
+      {/* Live start → end while a section is dragged or resized */}
+      {secTip && (
+        <div
+          className="pointer-events-none fixed z-[120] -translate-x-1/2 -translate-y-full rounded-lg bg-black/90 px-3 py-1.5 font-mono text-base font-semibold whitespace-nowrap text-white shadow-xl ring-1 ring-white/20"
+          style={{ left: secTip.x, top: secTip.y - 28 }}
+          data-section-tip
+        >
+          {secTip.text}
+        </div>
       )}
       {/* Live volume readout while a clip's gain is dragged */}
       {gainTip && (

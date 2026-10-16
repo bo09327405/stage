@@ -53,7 +53,7 @@ import { ExportDialog } from './ExportDialog'
 import { FxPanel, Inspector, PropertiesPanel, type InspectorTab } from './Inspector'
 import { LibraryPanel } from './LibraryPanel'
 import { RegionMenu, type RegionAction } from './RegionMenu'
-import { SectionMenu, type SectionAction } from './SectionMenu'
+import { SectionMenu, SectionStartDialog, type SectionAction } from './SectionMenu'
 import { StudioFilesDialog, type FilesTab } from './StudioFilesDialog'
 import {
   buildStudioFile,
@@ -310,6 +310,9 @@ export function StudioView({
     writePref('theatre.studio.barFolded', folded ? '1' : '0')
   }
   const barHidden = phone && barFolded
+  // The selected timeline section (big handles + the Section helper bar) and its exact-start dialog.
+  const [selectedSection, setSelectedSection] = useState<string | null>(null)
+  const [startDialog, setStartDialog] = useState(false)
   const headerW = folded ? 44 : HEADER_W
   const [tab, setTab] = useState<InspectorTab>('props')
   // Below lg the side panel is a slide-out drawer over the timeline (always docked from lg up).
@@ -773,10 +776,10 @@ export function StudioView({
   const shownPlayhead = recView ? recView.preview.start + recView.preview.elapsed : playhead
 
   /* ---------- keyboard ---------- */
-  const handlers = useRef({ play, record, regionAction, stop, setAutomationMode, setSelection, studio })
+  const handlers = useRef({ play, record, regionAction, stop, setAutomationMode, setSelection, setSelectedSection, studio })
   // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh the shortcut handlers every render
   useEffect(() => {
-    handlers.current = { play, record, regionAction, stop, setAutomationMode, setSelection, studio }
+    handlers.current = { play, record, regionAction, stop, setAutomationMode, setSelection, setSelectedSection, studio }
   })
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -802,7 +805,10 @@ export function StudioView({
       else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault()
         h.regionAction('delete')
-      } else if (e.key === 'Escape') h.setSelection([])
+      } else if (e.key === 'Escape') {
+        h.setSelection([])
+        h.setSelectedSection(null)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -883,6 +889,7 @@ export function StudioView({
 
   /* ---------- sections ---------- */
   const [sectionMenu, setSectionMenu] = useState<{ section: StudioSection; x: number; y: number } | null>(null)
+  const selSec = (selectedSection && studio?.sections[selectedSection]) || null
   const sectionAction = (sec: StudioSection, a: SectionAction) => {
     if (!studio) return
     const commitSec = (patch: Partial<StudioSection>, label: string) => updateSections(projectId, studio.id, [{ id: sec.id, patch }], label).catch((err) => notify((err as Error).message, true))
@@ -895,6 +902,10 @@ export function StudioView({
     }
     if ('rename' in a) return commitSec({ name: a.rename }, `區段重新命名為「${a.rename}」`)
     if ('color' in a) return commitSec({ color: a.color }, '區段顏色')
+    if ('start' in a) {
+      const start = Math.max(0, Math.round(a.start * 1000) / 1000)
+      return commitSec({ start, end: Math.round((start + (sec.end - sec.start)) * 1000) / 1000 }, `區段「${sec.name}」起點 ${start}s`)
+    }
     if ('length' in a) return commitSec({ end: Math.round((sec.start + a.length) * 1000) / 1000 }, `區段「${sec.name}」長度 ${a.length}s`)
   }
 
@@ -1140,7 +1151,12 @@ export function StudioView({
                 playhead={shownPlayhead}
                 onSeek={seek}
                 selection={validSelection}
-                onSelect={setSelection}
+                onSelect={(ids) => {
+                  setSelection(ids)
+                  if (ids.length) setSelectedSection(null)
+                }}
+                selectedSection={selSec ? selSec.id : null}
+                onSelectSection={setSelectedSection}
                 onDropFiles={(files, trackId, time) => uploadAndPlace(files, trackId, time)}
                 onLaneMenu={(trackId, time, x, y) => setLaneMenu({ trackId, time, x, y })}
                 selectedTrack={selectedTrack}
@@ -1385,6 +1401,40 @@ export function StudioView({
                 </div>
               </aside>
             </>
+          )}
+          {/* Section helper bar: the selected section's actions one tap away (touch screens) */}
+          {selSec && selectedRegions.length === 0 && !sectionMenu && !startDialog && (
+            <div
+              className="fixed bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-1/2 z-[70] hidden max-w-[96vw] -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-2xl border border-white/15 bg-[#1c1c1e]/95 p-1.5 shadow-2xl backdrop-blur-xl pointer-coarse:flex no-scrollbar"
+              data-section-bar
+            >
+              <span className="mx-1 max-w-24 shrink-0 truncate text-xs font-semibold text-white/70">{selSec.name}</span>
+              <button type="button" data-haptic="tap" className="h-12 shrink-0 rounded-xl bg-white/10 px-3 text-sm font-semibold" onClick={() => setStartDialog(true)}>
+                ⏱ 起始時間
+              </button>
+              <button type="button" data-haptic="tap" className="h-12 shrink-0 rounded-xl bg-white/10 px-3 text-sm font-semibold" onClick={() => seek(selSec.start)}>
+                📍 定位播放頭
+              </button>
+              <button type="button" className="h-12 shrink-0 rounded-xl bg-white/10 px-3 text-sm font-semibold" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setSectionMenu({ section: selSec, x: r.left, y: r.top }) }}>
+                ✏️ 名稱／顏色
+              </button>
+              <button type="button" data-haptic="strong" className="h-12 shrink-0 rounded-xl bg-panic/80 px-3 text-sm font-semibold text-white" onClick={() => { sectionAction(selSec, 'delete'); setSelectedSection(null) }}>
+                🗑 刪除
+              </button>
+              <button type="button" className="h-12 w-12 shrink-0 rounded-xl bg-white/10 text-lg" onClick={() => setSelectedSection(null)} aria-label="取消選取區段">
+                ✕
+              </button>
+            </div>
+          )}
+          {startDialog && selSec && (
+            <SectionStartDialog
+              section={selSec}
+              onApply={(start) => {
+                sectionAction(selSec, { start })
+                setStartDialog(false)
+              }}
+              onClose={() => setStartDialog(false)}
+            />
           )}
           {/* Touch helper bar: the same actions as the long-press menu, one tap away */}
           {selectedRegions.length > 0 && !menu && (
