@@ -601,10 +601,7 @@ export function Arrange(props: ArrangeProps) {
       gesture.current = null
       const d = secDrafts?.[g.id]
       setSecDrafts(null)
-      if (!g.moved || !d) {
-        if (g.kind === 'sec-move') onSeek(g.origin.start) // a click jumps to the section
-        return
-      }
+      if (!g.moved || !d) return // a plain click on a section does not move the playhead
       props.onSectionsCommit([{ id: g.id, patch: d }], g.kind === 'sec-move' ? `移動區段「${g.origin.name}」` : `調整區段「${g.origin.name}」長度`)
       return
     }
@@ -785,15 +782,18 @@ export function Arrange(props: ArrangeProps) {
             {props.corner}
           </div>
           <div
-            className="relative shrink-0 cursor-text border-b border-line bg-[#171717]"
+            className="relative shrink-0 cursor-text touch-none border-b border-line bg-[#171717]"
             style={{ width: contentW }}
+            // The only places that move the playhead: press / drag on this ruler (and the explicit menu items and transport buttons).
             onPointerDown={(e) => {
+              if (e.button !== 0) return
               e.currentTarget.setPointerCapture(e.pointerId)
               seekDrag.current = true
               onSeek(timeAt(e.clientX))
             }}
             onPointerMove={(e) => seekDrag.current && onSeek(timeAt(e.clientX))}
             onPointerUp={() => (seekDrag.current = false)}
+            onPointerCancel={() => (seekDrag.current = false)}
             data-ruler
           >
             {ticks.map((t) => (
@@ -911,9 +911,9 @@ export function Arrange(props: ArrangeProps) {
                 }
                 onPointerDown={(e) => {
                   if (e.button !== 0 || e.target !== e.currentTarget) return
+                  // Clicks in the clip area are clip / track operations: the playhead only moves from the ruler.
                   onSelectTrack(track.id)
                   onSelect([])
-                  onSeek(timeAt(e.clientX))
                 }}
                 onContextMenu={(e) => {
                   if (e.target !== e.currentTarget) return
