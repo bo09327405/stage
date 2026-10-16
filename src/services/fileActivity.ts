@@ -14,7 +14,7 @@ import { db } from './firebase'
  * 📜 檔案流動紀錄). Logging never blocks or fails the operation it records.
  */
 
-export type FileAction = 'upload' | 'link' | 'rename' | 'move' | 'delete' | 'assign'
+export type FileAction = 'upload' | 'link' | 'rename' | 'move' | 'delete' | 'assign' | 'restore'
 export type FileType = 'audio' | 'image' | 'video' | 'document' | 'other'
 
 export const ACTION_LABELS: Record<FileAction | 'existing', string> = {
@@ -24,6 +24,7 @@ export const ACTION_LABELS: Record<FileAction | 'existing', string> = {
   move: '移動',
   delete: '刪除',
   assign: '指派到專案',
+  restore: '已還原',
   existing: '既有檔案',
 }
 
@@ -46,6 +47,23 @@ export interface FileActivity {
   /** Before → after (old name / folder, new name / folder). */
   from: string | null
   to: string | null
+  /**
+   * On a delete entry: everything needed to put the file back (where it was, where its copy is kept,
+   * and the library / tag records that pointed at it). A restore entry names the delete it undoes in `from`.
+   */
+  restore?: RestorePayload | null
+}
+
+export interface RestorePayload {
+  /** R2 key the file lived at, and where its kept copy is now (null: nothing on R2 to bring back). */
+  key: string | null
+  trashKey: string | null
+  /** Library records (path → value) that were removed with it, and its label / tags record. */
+  records: { path: string; value: unknown }[]
+  tag: unknown | null
+  /** Display data for the restored entry. */
+  name: string
+  folder: string
 }
 
 export type FileActivityInput = Partial<Omit<FileActivity, 'id' | 'at' | 'editor' | 'action' | 'name'>> & { action: FileAction; name: string }
@@ -94,6 +112,7 @@ export async function logFileActivity(entry: FileActivityInput) {
       editor: { uid: u.uid, name: u.name, email: u.email },
       from: entry.from ?? null,
       to: entry.to ?? null,
+      ...(entry.restore ? { restore: entry.restore } : {}),
     })
   } catch {
     // The log is best effort: the file operation already happened.

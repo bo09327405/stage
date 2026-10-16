@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { moveFile, setFileLabel, type GlobalState, type ManagedFile } from '../../services/adminFiles'
 import { CATEGORY_FOLDERS, studioFolderId } from '../../services/assetLibrary'
 import { db } from '../../services/firebase'
+import { restoreFile } from '../../services/adminFiles'
 import { ACTION_LABELS, fileTypeOf, logFileActivity, projectOfRecord, useFileActivity, type FileActivity, type FileType } from '../../services/fileActivity'
 import { consoleUrl } from '../../services/navigation'
 import { formatWhen } from '../../utils/formatFile'
@@ -23,6 +24,7 @@ const ACTION_STYLE: Record<Row['action'], string> = {
   rename: 'bg-[#bf5af2]/15 text-[#d7a6ff]',
   move: 'bg-standby/15 text-standby',
   delete: 'bg-panic/15 text-panic',
+  restore: 'bg-go/15 text-go',
   existing: 'bg-white/[0.07] text-white/50',
 }
 type Range = 'today' | 'week' | 'month' | 'all' | 'custom'
@@ -131,6 +133,11 @@ export function FileActivityLog({ state, run }: { state: GlobalState; run: (job:
 
   /* ---------- actions ---------- */
 
+  // Delete entries that were already put back (a later 「已還原」 entry points at them).
+  const restoredIds = useMemo(() => new Set((entries ?? []).filter((e) => e.action === 'restore' && e.from).map((e) => e.from as string)), [entries])
+  const restore = (row: Row) => {
+    run(async () => `✓ 已還原檔案：${await restoreFile(row)}（檔案與素材庫紀錄都已放回原處）`)
+  }
   const rename = (row: Row, name: string) => {
     const file = row.file
     if (!file || !name.trim() || name.trim() === nameOf(file)) return
@@ -316,6 +323,26 @@ export function FileActivityLog({ state, run }: { state: GlobalState; run: (job:
                   {r.studioName && <div className="truncate text-[10px] text-[#d7a6ff]">🎛️ {r.studioName}</div>}
                 </td>
                 <td className="px-3 py-2 text-right align-top whitespace-nowrap">
+                  {r.action === 'delete' &&
+                    (restoredIds.has(r.id) ? (
+                      <span className="mr-1 text-[11px] text-go" data-log-restored={r.id}>
+                        ✓ 已還原
+                      </span>
+                    ) : r.restore ? (
+                      <button
+                        type="button"
+                        onClick={() => restore(r)}
+                        className="mr-1 min-h-9 rounded-lg bg-go/20 px-3 text-xs font-semibold text-go hover:bg-go/30"
+                        title="把檔案與素材庫紀錄放回原處"
+                        data-log-restore={r.id}
+                      >
+                        🔄 還原
+                      </button>
+                    ) : (
+                      <span className="mr-1 text-[10px] text-white/30" title="舊版刪除紀錄沒有保留檔案">
+                        無法還原
+                      </span>
+                    ))}
                   {r.url && (r.fileType === 'audio' || r.fileType === 'video') && r.file && (
                     <button type="button" onClick={() => preview(r)} className={`${btn} ${playing === r.id ? 'bg-go text-black' : 'bg-white/[0.07] text-white/75'}`} aria-label="試聽" data-log-play={r.id}>
                       {playing === r.id ? '■' : '▶'}

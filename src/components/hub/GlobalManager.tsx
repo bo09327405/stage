@@ -378,11 +378,11 @@ function FilesPanel({ folder, state, busy, run }: { folder: FolderNode; state: G
   const remove = (list: ManagedFile[]) => {
     const used = list.filter((f) => f.usedBy.length)
     const warn = used.length ? `\n\n⚠ 其中 ${used.length} 個檔案正被專案使用（${[...new Set(used.flatMap((f) => f.usedBy))].join('、')}），刪除後這些 Cue / 片段會無法播放。` : ''
-    if (!confirm(`永久刪除 ${list.length} 個檔案？${warn}`)) return
+    if (!confirm(`刪除 ${list.length} 個檔案？檔案會被保留，之後可以到「📜 檔案流動紀錄」按 🔄 還原。${warn}`)) return
     run(async () => {
       for (const f of list) await deleteFile(f)
       setSelected(new Set())
-      return `✓ 已刪除 ${list.length} 個檔案`
+      return `✓ 已刪除 ${list.length} 個檔案（可在「📜 檔案流動紀錄」還原）`
     })
   }
 

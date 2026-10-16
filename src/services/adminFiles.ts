@@ -1,7 +1,7 @@
 import { get, push, ref, serverTimestamp, set, update } from 'firebase/database'
 import { DEFAULT_MEDIA_FOLDER, SHARED_MEDIA_PATH, SHARED_STUDIO_FILES_PATH, cleanProjectName, projectMediaPath, type ProjectSummary } from '../types/project'
 import { isAdmin, type AppUser } from './auth'
-import { fileTypeOf, logFileActivity, projectOfRecord } from './fileActivity'
+import { fileTypeOf, logFileActivity, projectOfRecord, type FileActivity } from './fileActivity'
 import { db } from './firebase'
 import { toSummary } from './projects'
 import { deleteR2, importToR2, listR2, r2KeyOf, type R2Object } from './storage'
@@ -346,13 +346,75 @@ export async function moveFile(f: ManagedFile, destPrefix: string, existing: Set
 }
 
 /** Delete a file (R2) and its library entries. */
+/** Deleted files are kept here (outside every listed folder) until they are restored or purged. */
+export const TRASH_PREFIX = 'theatre/_trash/'
+
+/**
+ * Soft delete: the file leaves its folder and the library, but nothing is thrown away. Its R2 object is
+ * moved to the trash folder, and the library / tag records that pointed at it are written into the log
+ * entry, so 📜 檔案流動紀錄 can put everything back with 「還原」.
+ */
 export async function deleteFile(f: ManagedFile) {
-  if (f.key) await deleteR2([f.key])
+  // Snapshot first: after the update below these records are gone.
+  const records = await Promise.all(f.indexPaths.map(async (path) => ({ path, value: (await get(ref(db, path))).val() as unknown })))
+  const tag = (await get(ref(db, `mediaTags/${tagId(f.id)}`))).val() as unknown
+  let trashKey: string | null = null
+  if (f.key) {
+    trashKey = `${TRASH_PREFIX}${Date.now().toString(36)}/${f.key.replace(/^theatre\//, '')}`
+    await copyR2(f.key, trashKey)
+    await deleteR2([f.key])
+  }
   const updates: Record<string, null> = {}
   for (const p of f.indexPaths) updates[p] = null
   updates[`mediaTags/${tagId(f.id)}`] = null
   await update(ref(db), updates)
-  void logFileActivity({ ...logBase(f), action: 'delete', name: f.label || f.name, from: f.folder, to: f.key ? '已刪除（含 R2 檔案）' : '只移除紀錄' })
+  void logFileActivity({
+    ...logBase(f),
+    action: 'delete',
+    name: f.label || f.name,
+    from: f.folder,
+    to: f.key ? '已刪除（可在流動紀錄還原）' : '只移除紀錄（可還原）',
+    restore: { key: f.key, trashKey, records, tag: tag ?? null, name: f.label || f.name, folder: f.folder },
+  })
+}
+
+/**
+ * Put a deleted file back: its R2 object returns to the original address, its library and tag records
+ * are written back, and a 「已還原」 entry is logged. Throws a readable message when the kept copy is gone.
+ */
+export async function restoreFile(entry: Pick<FileActivity, 'id' | 'restore' | 'fileType' | 'storage' | 'url' | 'record' | 'projectId' | 'projectName' | 'studioId' | 'studioName'>): Promise<string> {
+  const r = entry.restore
+  if (!r) throw new Error('這是舊版的刪除紀錄，當時沒有保留檔案，無法還原。')
+  if (r.key && r.trashKey) {
+    try {
+      await copyR2(r.trashKey, r.key)
+    } catch (err) {
+      const msg = (err as Error).message
+      throw new Error(/不存在|404|not found/i.test(msg) ? `找不到「${r.name}」被保留的檔案（可能已被清除），無法還原。` : `還原失敗：${msg}`)
+    }
+    await deleteR2([r.trashKey]).catch(() => {}) // the kept copy has done its job
+  }
+  const updates: Record<string, unknown> = {}
+  for (const rec of r.records) updates[rec.path] = rec.value
+  if (r.tag != null && r.key) updates[`mediaTags/${tagId(r.key)}`] = r.tag
+  else if (r.tag != null && entry.url) updates[`mediaTags/${tagId(entry.url)}`] = r.tag
+  if (Object.keys(updates).length) await update(ref(db), updates)
+  void logFileActivity({
+    action: 'restore',
+    name: r.name,
+    fileType: entry.fileType,
+    storage: entry.storage,
+    url: entry.url,
+    key: r.key,
+    record: entry.record,
+    projectId: entry.projectId,
+    projectName: entry.projectName,
+    studioId: entry.studioId,
+    studioName: entry.studioName,
+    from: entry.id,
+    to: r.folder,
+  })
+  return r.name
 }
 
 /**

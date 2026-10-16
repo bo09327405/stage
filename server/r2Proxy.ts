@@ -74,7 +74,7 @@ const validKey = (key: string) =>
  * modules. Set Cue media
  * (theatre/cues/…) is never deleted through the proxy.
  */
-const DELETABLE = ['theatre/projects/', 'theatre/setcue-projects/', 'theatre/daw/', 'theatre/public/', 'theatre/modules/', 'theatre/cues/', 'theatre/hits/']
+const DELETABLE = ['theatre/projects/', 'theatre/setcue-projects/', 'theatre/daw/', 'theatre/public/', 'theatre/modules/', 'theatre/cues/', 'theatre/hits/', 'theatre/_trash/']
 const deletable = (key: string) => validKey(key) && DELETABLE.some((p) => key.startsWith(p) && key.length > p.length)
 const MAX_DELETE = 500
 

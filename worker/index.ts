@@ -24,7 +24,7 @@ const isLiveKey = (key: string) => key.startsWith(PUBLIC_PREFIX) && key.includes
 const LIVE_CACHE = 'no-cache, must-revalidate'
 const MAX_UPLOAD = 250 * 1024 * 1024
 const MAX_DELETE = 500
-const DELETABLE = ['theatre/projects/', 'theatre/setcue-projects/', 'theatre/daw/', 'theatre/public/', 'theatre/modules/', 'theatre/cues/', 'theatre/hits/']
+const DELETABLE = ['theatre/projects/', 'theatre/setcue-projects/', 'theatre/daw/', 'theatre/public/', 'theatre/modules/', 'theatre/cues/', 'theatre/hits/', 'theatre/_trash/']
 
 const validKey = (key: string) =>
   key.startsWith('theatre/') && key.length <= 490 && !key.includes('..') && !/[\\?#]/.test(key) && ![...key].some((c) => c.charCodeAt(0) < 32)
@@ -193,9 +193,8 @@ async function handle(req: Request, env: Env, url: URL): Promise<Response> {
     if (!validKey(from) || !validKey(to) || from === to) return json(400, { error: '檔案路徑不合法' })
     const src = await env.BUCKET.get(from)
     if (!src) return json(404, { error: '來源檔案不存在' })
-    const body = await src.arrayBuffer()
-    await env.BUCKET.put(to, body, { httpMetadata: { contentType: src.httpMetadata?.contentType || typeOf(to) } })
-    return json(200, { key: to, url: r2Url(to), bytes: body.byteLength })
+    await env.BUCKET.put(to, src.body, { httpMetadata: { contentType: src.httpMetadata?.contentType || typeOf(to) } })
+    return json(200, { key: to, url: r2Url(to), bytes: src.size })
   }
 
   if (path === '/upload' && req.method === 'POST') {
