@@ -1,4 +1,8 @@
-import { DEFAULT_DIM_DB, clampDimDb, useDimDb } from '../../utils/dim'
+import { DEFAULT_DIM_DB, clampDimDb, dimGain, useDimDb } from '../../utils/dim'
+import { useGoButtonLayout } from '../../hooks/useMedia'
+import { MobileGoBar } from './MobileGoBar'
+import { MobileSideRail } from './MobileSideRail'
+import { instanceTiming } from '../../utils/cueTiming'
 import { StudioMenu } from './StudioMenu'
 import { useHeaderCollapse } from '../../utils/headerCollapse'
 import { listenForFocusRequests } from '../../services/navigation'
@@ -14,7 +18,7 @@ import { usePresence } from '../../services/presence'
 import { recheckModeration, setUploadHidden, setUploadModeration, useProjectUploads } from '../../services/uploads'
 import { cueFromUpload } from '../../utils/uploadCue'
 import { saveAsNewVersion, setLivePointer, touchProject, useLivePointer } from '../../services/projects'
-import { DEFAULT_CUE, activeList, showClock, type ActiveCue, type AudienceUpload, type Cue } from '../../types/cue'
+import { DEFAULT_CUE, activeList, instanceClock, showClock, type ActiveCue, type AudienceUpload, type Cue } from '../../types/cue'
 import { versionPath, type ShowRef } from '../../types/project'
 import { PromptDialog } from '../ui/PromptDialog'
 import { CueEditor } from './CueEditor'
@@ -109,6 +113,9 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   const presence = usePresence(basePath)
   const live = useLivePointer()
   const [editor, setEditor] = useState<EditorState>(null)
+  // Phone / portrait iPad: Go Button layout (GO bar on top, DIM + Master rail, editor as a full-screen sheet).
+  const compact = useGoButtonLayout()
+  const [mobileSheet, setMobileSheet] = useState(false)
   const [savingAs, setSavingAs] = useState(false)
   const [triggersOpen, setTriggersOpen] = useState(false)
   // Full control mode (surface fills the page) and the collapsible editor column.
@@ -212,6 +219,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
     setEditor(state)
     if (state) {
       switchRightTab('editor')
+      setMobileSheet(true)
       // Picking a cue to edit brings the collapsed editor back.
       setInspector(true)
     }
@@ -548,7 +556,22 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
           }`}
         >
           {/* Left: transport */}
-          <aside className={`shrink-0 border-line lg:overflow-y-auto lg:border-r ${sidebarOpen ? 'lg:hidden min-[1800px]:block' : ''}`}>
+          {compact && (
+            <MobileGoBar
+              title={projectName}
+              playbackState={playbackState}
+              standbyCue={standbyCue}
+              firstCue={cues[0] ?? null}
+              elapsed={instances.length > 0 ? Math.max(...instances.map((i) => instanceTiming(i, instanceClock(i, now)).elapsed)) : null}
+              lockRemaining={lockRemaining}
+              onGo={handleGo}
+              onPause={() => engine.pause().catch(ignore)}
+              onResume={() => engine.resume().catch(ignore)}
+              onStop={() => engine.panic().catch(ignore)}
+              onAdd={() => openEditor({ mode: 'create' })}
+            />
+          )}
+          <aside className={`shrink-0 border-line lg:overflow-y-auto lg:border-r ${compact ? 'hidden' : ''} ${sidebarOpen ? 'lg:hidden min-[1800px]:block' : ''}`}>
             <TransportPanel
               playbackState={playbackState}
               standbyCue={standbyCue}
@@ -581,12 +604,25 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
               <h1 className="text-[11px] font-semibold tracking-widest text-white/50 uppercase">
                 Cue List <span className="ml-1 text-white/25">{cues.length}</span>
               </h1>
-              <button
-                onClick={() => openEditor({ mode: 'create' })}
-                className="rounded-lg bg-white/[0.07] px-3 py-1.5 text-xs font-medium text-white/80 transition hover:bg-accent hover:text-white"
-              >
-                ＋ 新增 Cue
-              </button>
+              <div className="flex items-center gap-2">
+                {compact && (
+                  <button
+                    onClick={() => {
+                      switchRightTab('inbox')
+                      setMobileSheet(true)
+                    }}
+                    className="min-h-10 rounded-lg bg-white/[0.07] px-3 text-xs font-medium text-white/80"
+                  >
+                    📥 收件匣{unseen > 0 ? ` +${unseen}` : ''}
+                  </button>
+                )}
+                <button
+                  onClick={() => openEditor({ mode: 'create' })}
+                  className="rounded-lg bg-white/[0.07] px-3 py-1.5 text-xs font-medium text-white/80 transition hover:bg-accent hover:text-white pointer-coarse:min-h-10"
+                >
+                  ＋ 新增 Cue
+                </button>
+              </div>
             </div>
             <CueBulkBar
               cues={cues}
@@ -597,7 +633,24 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
               removeCues={removeCues}
               setCueNumbers={setCueNumbers}
             />
-            <div className="min-h-[240px] flex-1 overflow-y-auto">
+            <div className={`min-h-[240px] flex-1 ${compact ? 'flex' : 'overflow-y-auto'}`}>
+              {compact && (
+                <div className="sticky top-[176px] z-20 h-[calc(100dvh-176px-env(safe-area-inset-bottom,0px))] shrink-0 self-start border-r border-line bg-[#151517]">
+                  <MobileSideRail
+                    effective={showState.masterVolume * dimGain(showState.dim, showState.dim ? clampDimDb(showState.dimDb ?? DEFAULT_DIM_DB) : consoleDimDb)}
+                    dim={showState.dim}
+                    dimDb={showState.dim ? clampDimDb(showState.dimDb ?? DEFAULT_DIM_DB) : consoleDimDb}
+                    muted={showState.muted}
+                    onMasterVolume={(v, undim) => engine.setMasterVolume(v, { undim }).catch(ignore)}
+                    onDim={(d) => engine.setDim(d, d ? consoleDimDb : undefined).catch(ignore)}
+                    onDimDb={(v) => {
+                      setConsoleDimDb(v)
+                      if (showState.dim) engine.setDimDb(v).catch(ignore)
+                    }}
+                  />
+                </div>
+              )}
+              <div className={compact ? 'min-w-0 flex-1' : 'contents'}>
               {loaded ? (
                 <CueList
                   checked={checked}
@@ -622,6 +675,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
               ) : (
                 <p className="p-8 text-sm text-white/30">載入 Cue 清單…</p>
               )}
+              </div>
             </div>
             <HitsPanel
               projectId={show.projectId}
@@ -638,7 +692,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
           </main>
 
           {/* Right: inspector — cue editor / audience inbox (collapsible) */}
-          {!inspectorOpen ? (
+          {compact && !(mobileSheet && (editor != null || rightTab === 'inbox')) ? null : !compact && !inspectorOpen ? (
             <button
               onClick={() => setInspector(true)}
               className="flex min-h-12 items-center justify-center gap-2 border-t border-line bg-panel/50 text-xs text-white/55 hover:bg-white/[0.06] hover:text-white lg:min-h-0 lg:flex-col lg:border-t-0 lg:border-l lg:py-4"
@@ -648,10 +702,22 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
               <span className="lg:[writing-mode:vertical-rl]">展開編輯區{unseen > 0 ? ` · 收件匣 +${unseen}` : ''}</span>
             </button>
           ) : (
-          <aside className="relative flex min-h-[520px] shrink-0 flex-col border-t border-line bg-panel/50 backdrop-blur-xl lg:min-h-0 lg:border-t-0 lg:border-l">
+          <aside
+            className={
+              compact
+                ? 'fixed inset-0 z-[70] flex flex-col bg-[#0b0b0d] pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]'
+                : 'relative flex min-h-[520px] shrink-0 flex-col border-t border-line bg-panel/50 backdrop-blur-xl lg:min-h-0 lg:border-t-0 lg:border-l'
+            }
+            data-mobile-sheet={compact || undefined}
+          >
             <div className="flex gap-1 border-b border-line p-2" role="tablist">
               <button
-                onClick={() => setInspector(false)}
+                onClick={() => {
+                  if (compact) {
+                    setMobileSheet(false)
+                    setEditor(null)
+                  } else setInspector(false)
+                }}
                 className="flex min-h-10 w-9 shrink-0 items-center justify-center rounded-lg text-white/45 hover:bg-white/10 hover:text-white"
                 title="收合編輯區"
                 aria-label="收合編輯區"
