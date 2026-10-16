@@ -282,7 +282,7 @@ export function StudioView({
   const [zoom, setZoomState] = useState(() => clampZoom(Number(readPref('theatre.studio.zoom')) || 60))
   const setZoom = (z: number) => {
     setZoomState(z)
-    writePref('theatre.studio.zoom', String(Math.round(z)))
+    writePref('theatre.studio.zoom', String(Math.round(z * 1000) / 1000))
   }
   const [automationMode, setAutomationMode] = useState(false)
   const [snap, setSnap] = useState(true)

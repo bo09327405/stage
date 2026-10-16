@@ -19,6 +19,12 @@ export function timecode(seconds: number, ms = true) {
 
 /** Ruler label m:ss, with as many decimals as the step needs. */
 export function rulerLabel(seconds: number, step: number) {
+  if (seconds >= 3600) {
+    // An hour or more: h:mm:ss (minute ticks stay readable far out).
+    const h = Math.floor(seconds / 3600)
+    const mm = Math.floor((seconds % 3600) / 60)
+    return `${h}:${String(mm).padStart(2, '0')}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`
+  }
   const m = Math.floor(seconds / 60)
   const s = seconds - m * 60
   const decimals = step < 0.1 ? 2 : step < 1 ? 1 : 0
@@ -34,11 +40,13 @@ export const dbLabel = (gain: number) => {
 
 /** Ruler step (seconds) for a zoom (px per second): labels roughly every 90 px. */
 export function rulerStep(zoom: number) {
-  const steps = [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300]
-  return steps.find((s) => s * zoom >= 90) ?? 600
+  // Steps reach one hour, so zoomed far out the labels thin out (1:00, 5:00, 10:00 …) instead of overlapping.
+  const steps = [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200]
+  return steps.find((s) => s * zoom >= 90) ?? 14400
 }
 
-export const ZOOM_MIN = 4
+/** Lowest zoom: 0.05 px per second, so even a phone shows an hour-long project (and a desktop several hours). */
+export const ZOOM_MIN = 0.05
 export const ZOOM_MAX = 1200
 export const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z))
 

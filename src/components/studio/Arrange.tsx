@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { PEAK_RESOLUTION, bufferOffset, peaksOf, regionBuffer } from '../../studio/audio'
-import { clampZoom, dbLabel, rulerLabel, rulerStep, timecode } from '../../studio/format'
+import { ZOOM_MIN, clampZoom, dbLabel, rulerLabel, rulerStep, timecode } from '../../studio/format'
 import { AutomationNodeEditor, AutomationNodeMenu, type NodeInfo } from './AutomationNodeMenu'
 import { bendHandles, handlesFromControls, resetShape, segmentControls, shapeOf, type PresetShape, type Range } from '../../studio/curves'
 import { CurveLayer, CurveToolbar } from './CurveEditor'
@@ -257,16 +257,36 @@ export function Arrange(props: ArrangeProps) {
   useEffect(() => {
     zoomRef.current = zoom
   }, [zoom])
-  const zoomAround = (next: number, clientX: number) => {
+  /** Zoom that makes the whole project fill the visible width (the "overview" limit of a pinch-in). */
+  const fitZoom = () => {
+    const el = scroller.current
+    return el ? clampZoom((el.clientWidth - headerW - 24) / Math.max(5, length)) : ZOOM_MIN
+  }
+  // A pinch fires on every pointer move (more often than the screen refreshes): coalesce to one update
+  // per frame, always with the latest target, so zooming stays smooth with many clips.
+  const zoomFrame = useRef(0)
+  const zoomPending = useRef<{ z: number; x: number } | null>(null)
+  const zoomAnchor = useRef(0)
+  const zoomAround = (next: number, clientX: number, floor = 0) => {
     const el = scroller.current
     if (!el) return
-    const z = clampZoom(next)
+    const z = clampZoom(Math.max(next, floor))
     const x = clientX - el.getBoundingClientRect().left - headerW
-    const t = (el.scrollLeft + x) / zoomRef.current
+    // The time under the finger / pointer stays where it is: read it once per frame, before the zoom changes.
+    if (!zoomPending.current) zoomAnchor.current = (el.scrollLeft + x) / zoomRef.current
     zoomRef.current = z
-    onZoom(z)
-    // After the new width renders, keep the time under the pointer where it was.
-    requestAnimationFrame(() => (el.scrollLeft = Math.max(0, t * z - x)))
+    zoomPending.current = { z, x }
+    if (zoomFrame.current) return
+    zoomFrame.current = requestAnimationFrame(() => {
+      zoomFrame.current = 0
+      const p = zoomPending.current
+      zoomPending.current = null
+      if (!p) return
+      const t = zoomAnchor.current
+      onZoom(p.z)
+      // After the new width renders, keep the time under the pointer where it was.
+      requestAnimationFrame(() => (el.scrollLeft = Math.max(0, t * p.z - p.x)))
+    })
   }
   useEffect(() => {
     const el = scroller.current
@@ -315,7 +335,11 @@ export function Arrange(props: ArrangeProps) {
     touches.current.set(e.pointerId, e.clientX)
     if (pinch.current && touches.current.size === 2) {
       const [a, b] = [...touches.current.values()]
-      zoomAround((pinch.current.zoom * Math.max(10, Math.abs(a - b))) / Math.max(10, pinch.current.dist), (a + b) / 2)
+      const next = (pinch.current.zoom * Math.max(10, Math.abs(a - b))) / Math.max(10, pinch.current.dist)
+      // Pinching in stops at "the whole project fills the screen" (a pinch started already wider than that just holds).
+      const floor = Math.min(fitZoom(), pinch.current.zoom)
+      if (next < floor && zoomRef.current > floor + 1e-9) navigator.vibrate?.(8)
+      zoomAround(next, (a + b) / 2, floor)
     }
   }
   const onTouchUp = (e: PointerEvent) => {
