@@ -13,7 +13,7 @@ self.addEventListener('push', (event) => {
     (async () => {
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
       // The app is on screen: it already rings and vibrates itself (live database listener).
-      if (windows.some((w) => w.visibilityState === 'visible')) return
+      if (!data.test && windows.some((w) => w.visibilityState === 'visible')) return
       await self.registration.showNotification(data.title || '📞 Intercom 呼叫', {
         body: data.body || '點開回到 Intercom',
         tag: data.type === 'announce' ? 'announce' : 'intercom-call',
