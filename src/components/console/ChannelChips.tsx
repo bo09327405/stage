@@ -9,6 +9,7 @@ export function ChannelChips({
   value,
   onChange,
   running,
+  small = false,
 }: {
   count: number
   /** CHANNEL_ALL or channel_n. */
@@ -16,12 +17,14 @@ export function ChannelChips({
   onChange: (view: string) => void
   /** Running cue count per channel id (shown as a ▶ badge). */
   running: Record<string, number>
+  /** Compact row for widgets (control panel); the console uses the 44 px thumb size. */
+  small?: boolean
 }) {
   if (count <= 0) return null
   const chips = [CHANNEL_ALL, ...channelIds(count)]
   return (
     <div
-      className="flex min-h-14 items-center gap-2 overflow-x-auto overscroll-x-contain border-b border-line bg-panel/40 px-3 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className={`flex items-center overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${small ? 'min-h-9 gap-1.5 py-1' : 'min-h-14 gap-2 border-b border-line bg-panel/40 px-3 py-1.5'}`}
       role="tablist"
       aria-label="頻道檢視"
       data-channel-chips
@@ -40,7 +43,7 @@ export function ChannelChips({
               if (!active) navigator.vibrate?.(10)
               onChange(id)
             }}
-            className={`flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-4 text-sm font-semibold whitespace-nowrap transition active:scale-95 ${
+            className={`flex shrink-0 items-center gap-1.5 rounded-full border font-semibold whitespace-nowrap transition active:scale-95 ${small ? 'min-h-8 px-3 text-xs' : 'min-h-11 px-4 text-sm'} ${
               active ? 'text-black' : 'border-white/15 bg-white/[0.05] text-white/75'
             }`}
             style={active ? { background: color, borderColor: color } : undefined}

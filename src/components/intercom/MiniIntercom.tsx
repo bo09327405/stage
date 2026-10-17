@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../../services/auth'
-import { INTERCOM_CHANNELS, roleColor, type IntercomChannel } from '../../types/intercom'
+import { intercomChannelLabel, intercomChannelOptions, roleColor, type IntercomChannel } from '../../types/intercom'
 import type { SurfaceWidget } from '../../types/surface'
 import { IntercomChat } from './IntercomChat'
 import { useIntercomContext, type Intercom } from './intercomContext'
@@ -21,15 +21,23 @@ function Lamp({ label, on, color, blink, id }: { label: string; on: boolean; col
 /** Ch A / Ch B / All Call selector, shared with the Intercom drawer. */
 export function ChannelPicker({ intercom, small }: { intercom: Intercom; small?: boolean }) {
   return (
-    <div className="grid grid-cols-3 gap-1 rounded-lg bg-black/40 p-0.5" role="radiogroup" aria-label="Intercom 頻道">
-      {INTERCOM_CHANNELS.map((c) => (
+    <div
+      className={`rounded-lg bg-black/40 p-0.5 ${intercom.groupCount > 0 ? 'flex gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden' : 'grid grid-cols-3 gap-1'}`}
+      role="radiogroup"
+      aria-label="Intercom 頻道"
+      data-intercom-channels
+    >
+      {intercomChannelOptions(intercom.groupCount).map((c) => (
         <button
           key={c.id}
           type="button"
           role="radio"
           aria-checked={intercom.channel === c.id}
-          onClick={() => intercom.setChannel(c.id)}
-          className={`rounded-md font-bold ${small ? 'min-h-7 text-[10px]' : 'min-h-9 text-xs'} ${
+          onClick={() => {
+            if (intercom.channel !== c.id) navigator.vibrate?.(10)
+            intercom.setChannel(c.id)
+          }}
+          className={`${intercom.groupCount > 0 ? 'shrink-0 px-3 ' : ''}rounded-md font-bold ${small ? 'min-h-7 text-[10px]' : 'min-h-9 text-xs'} ${
             intercom.channel === c.id ? (c.id === 'all' ? 'bg-standby text-black' : 'bg-accent text-white') : 'text-white/50 hover:text-white/80'
           }`}
           data-intercom-channel={c.id}
@@ -41,7 +49,7 @@ export function ChannelPicker({ intercom, small }: { intercom: Intercom; small?:
   )
 }
 
-const channelLabel = (c: IntercomChannel) => INTERCOM_CHANNELS.find((x) => x.id === c)?.label ?? c
+const channelLabel = (c: IntercomChannel) => intercomChannelLabel(c)
 
 /**
  * A surface button in "Intercom" display: a belt-pack style station — channel select, TALK

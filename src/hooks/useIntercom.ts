@@ -22,6 +22,7 @@ import {
   channelsMeet,
   intercomPath,
   type ChatMessage,
+  isGroupChannel,
   type IntercomChannel,
   type IntercomCall,
   type IntercomMember,
@@ -79,7 +80,7 @@ export interface ActiveCallAlert {
  * Production intercom for a project: presence, text chat, CALL buzzer and WebRTC voice.
  * Mount once per page (it keeps running while the panel is closed).
  */
-export function useIntercom(projectId: string) {
+export function useIntercom(projectId: string, groupCount = 0) {
   const base = intercomPath(projectId)
   const [identity, setIdentity] = useState<IntercomIdentity | null>(loadIdentity)
   // Latest identity for callbacks that run right after join(), before a re-render.
@@ -90,11 +91,18 @@ export function useIntercom(projectId: string) {
   const [alert, setAlert] = useState<ActiveCallAlert | null>(null)
   const [readUpTo, setReadUpTo] = useState(0)
   const [channel, setChannelState] = useState<IntercomChannel>(() =>
-    loadPref<IntercomChannel>(CHANNEL_KEY, (r) => (r === 'A' || r === 'B' || r === 'all' ? r : null), 'all'),
+    loadPref<IntercomChannel>(CHANNEL_KEY, (r) => (r === 'A' || r === 'B' || r === 'all' || isGroupChannel(r) ? (r as IntercomChannel) : null), 'all'),
   )
   const [listenVolume, setListenVolumeState] = useState(() =>
     loadPref(VOLUME_KEY, (r) => (Number.isFinite(Number(r)) ? Math.max(0, Math.min(1, Number(r))) : null), 1),
   )
+  // The show was regrouped to fewer groups than this station's channel: fall back to All Call.
+  useEffect(() => {
+    if (isGroupChannel(channel) && Number(channel.replace('channel_', '')) > groupCount) {
+      setChannelState('all')
+      savePref(CHANNEL_KEY, 'all')
+    }
+  }, [channel, groupCount])
   const setChannel = useCallback((c: IntercomChannel) => {
     setChannelState(c)
     savePref(CHANNEL_KEY, c)
@@ -508,6 +516,8 @@ export function useIntercom(projectId: string) {
   return {
     selfId: MEMBER_ID,
     identity,
+    /** Number of audience groups of the show: Ch 1 … Ch N are offered as extra channels. */
+    groupCount,
     channel,
     setChannel,
     listenVolume,

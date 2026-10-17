@@ -17,13 +17,26 @@ export const roleColor = (role: IntercomRole) => INTERCOM_ROLES.find((r) => r.id
 export type MicMode = 'open' | 'ptt'
 
 /** Party-line channels. "all" (All Call) talks to and hears every channel. */
-export type IntercomChannel = 'A' | 'B' | 'all'
+export type IntercomChannel = 'A' | 'B' | 'all' | `channel_${number}`
 
 export const INTERCOM_CHANNELS: { id: IntercomChannel; label: string }[] = [
   { id: 'A', label: 'Ch A' },
   { id: 'B', label: 'Ch B' },
   { id: 'all', label: 'All Call' },
 ]
+
+/** A party-line channel that follows one of the show's audience groups (crew working a group together). */
+export const isGroupChannel = (c: string | undefined): c is `channel_${number}` => /^channel_\d+$/.test(c ?? '')
+
+/** The crew's selectable channels: Ch A / Ch B / All Call, plus one per audience group (Ch 1 … Ch N). */
+export const intercomChannelOptions = (groupCount: number): { id: IntercomChannel; label: string }[] => [
+  ...INTERCOM_CHANNELS.slice(0, 2),
+  ...Array.from({ length: groupCount }, (_, i) => ({ id: `channel_${i + 1}` as IntercomChannel, label: `Ch ${i + 1}` })),
+  INTERCOM_CHANNELS[2],
+]
+
+/** Short label for any channel id. */
+export const intercomChannelLabel = (c: string | undefined) => (isGroupChannel(c) ? `Ch ${c.replace('channel_', '')}` : c === 'A' || c === 'B' ? `Ch ${c}` : 'All Call')
 
 /** Whether stations on these two channels hear each other. Older stations (no channel) are on All. */
 export const channelsMeet = (a: IntercomChannel | undefined, b: IntercomChannel | undefined) =>

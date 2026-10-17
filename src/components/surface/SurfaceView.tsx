@@ -33,7 +33,7 @@ export function SurfaceView({ show, projectName, versionName, initialSurfaceId, 
   const { hits } = useHits(basePath)
   const engine = useTheatreEngine('console', { basePath, cues })
   const router = useTriggerRouter({ show, basePath, label: `控制面板 · ${projectName}`, engine, cues, hits })
-  const intercom = useIntercom(show.projectId)
+  const intercom = useIntercom(show.projectId, engine.showState.channels.count)
   const [intercomOpen, setIntercomOpen] = useState(false)
   const [triggersOpen, setTriggersOpen] = useState(false)
   const [backNote, setBackNote] = useState(false)

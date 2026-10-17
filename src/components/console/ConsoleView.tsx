@@ -9,6 +9,7 @@ import { listenForFocusRequests } from '../../services/navigation'
 import { useProjectLock } from '../../services/projectLock'
 import { isAdmin, useAuth } from '../../services/auth'
 import { CHANNEL_ALL, channelIds, reachesChannel } from '../../types/channels'
+import { cuesForChannel, useChannelView } from '../../hooks/useChannelView'
 import { AnnouncePanel } from './AnnouncePanel'
 import { ChannelChips } from './ChannelChips'
 import { ChannelOverview } from './ChannelOverview'
@@ -123,7 +124,6 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   const [mobileSheet, setMobileSheet] = useState(false)
   const [channelSettingsOpen, setChannelSettingsOpen] = useState(false)
   const [announceOpen, setAnnounceOpen] = useState(false)
-  const [channelPick, setChannelPick] = useState(() => readPref(`theatre.channelView.${show.projectId}`) ?? CHANNEL_ALL)
   const [selectMode, setSelectMode] = useState(false)
   const [savingAs, setSavingAs] = useState(false)
   const [triggersOpen, setTriggersOpen] = useState(false)
@@ -168,7 +168,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
       // Not remembered; harmless.
     }
   }
-  const intercom = useIntercom(show.projectId)
+  const intercom = useIntercom(show.projectId, showState.channels.count)
   const [consoleDimDb, setConsoleDimDb] = useDimDb('console')
   // Auto-save the show (cue lists, hits, script, surfaces, triggers, media) to R2 after each pause in
   // editing: theatre/setcue-projects/{pid}.json. Playback state isn't watched, so running the show
@@ -248,15 +248,8 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   // Latest instance per cue, for row progress bars.
   // Audience channel groups: which one the console is focused on (ALL = overview of every group).
   const channelCount = showState.channels.count
-  const channelView = channelCount > 0 && channelIds(channelCount).includes(channelPick) ? channelPick : CHANNEL_ALL
-  const chooseChannel = (view: string) => {
-    setChannelPick(view)
-    writePref(`theatre.channelView.${show.projectId}`, view)
-  }
-  const visibleCues = useMemo(
-    () => (channelCount > 0 && channelView !== CHANNEL_ALL ? cues.filter((c) => reachesChannel(c.targetChannels, channelView)) : cues),
-    [cues, channelCount, channelView],
-  )
+  const [channelView, chooseChannel] = useChannelView(channelCount)
+  const visibleCues = useMemo(() => cuesForChannel(cues, channelView, channelCount), [cues, channelCount, channelView])
   const runningPerChannel = useMemo(() => {
     const out: Record<string, number> = {}
     for (const inst of instances) {

@@ -1,4 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
+import { cuesForChannel, useChannelView } from '../../hooks/useChannelView'
+import { channelIds, reachesChannel } from '../../types/channels'
+import { ChannelChips } from '../console/ChannelChips'
 import { useCueMonitorState } from '../../hooks/useCueMonitorState'
 import { formatTime } from '../../hooks/useServerNow'
 import type { useTheatreEngine } from '../../hooks/useTheatreEngine'
@@ -16,7 +19,7 @@ const ignore = () => {}
 export function MiniCueMonitor({
   widget,
   engine,
-  cues,
+  cues: allCues,
   preview = false,
 }: {
   widget: SurfaceWidget
@@ -25,6 +28,17 @@ export function MiniCueMonitor({
   preview?: boolean
 }) {
   const { instances, newest, standby, tileState, timingOf, isPaused } = useCueMonitorState(engine)
+  const groupCount = engine.showState.channels.count
+  const [channelView, setChannelView] = useChannelView(groupCount)
+  const cues = useMemo(() => cuesForChannel(allCues, channelView, groupCount), [allCues, channelView, groupCount])
+  const runningPerChannel = useMemo(() => {
+    const out: Record<string, number> = {}
+    for (const inst of instances) {
+      if (inst.stopAt != null) continue
+      for (const id of channelIds(groupCount)) if (reachesChannel(inst.cue.targetChannels, id)) out[id] = (out[id] ?? 0) + 1
+    }
+    return out
+  }, [instances, groupCount])
   const live = instances.filter((i) => i.stopAt == null)
   const newestTiming = newest ? timingOf(newest) : null
   const listRef = useRef<HTMLUListElement>(null)
@@ -58,6 +72,7 @@ export function MiniCueMonitor({
         </span>
         {live.length > 1 && <span className="shrink-0 rounded bg-go/20 px-1.5 text-[10px] font-semibold text-go">{live.length} 個執行中</span>}
       </div>
+      {groupCount > 0 && <ChannelChips count={groupCount} value={channelView} onChange={setChannelView} running={runningPerChannel} small />}
 
       <StatusRow
         tone="go"

@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { useIntercom } from '../../hooks/useIntercom'
-import { INTERCOM_ROLES, roleColor, type IntercomMember, type IntercomRole } from '../../types/intercom'
+import { INTERCOM_ROLES, intercomChannelLabel, intercomChannelOptions, roleColor, type IntercomChannel, type IntercomMember, type IntercomRole } from '../../types/intercom'
 import { Segmented, fieldClass } from '../ui/controls'
 import { ChannelPicker } from './MiniIntercom'
 import { IntercomChat } from './IntercomChat'
@@ -241,11 +241,36 @@ function VoiceControls({ intercom }: { intercom: Intercom }) {
 
 function MemberList({ intercom }: { intercom: Intercom }) {
   const { voice } = intercom
+  // Filter the crew list by channel (view only — it doesn't change which channel you talk on).
+  const [filter, setFilter] = useState<'*' | IntercomChannel>('*')
+  const options = intercomChannelOptions(intercom.groupCount)
+  const active = filter === '*' || options.some((o) => o.id === filter) ? filter : '*'
+  const shown = active === '*' ? intercom.members : intercom.members.filter((m) => !m.channel || m.channel === 'all' || m.channel === active)
   return (
     <section className="max-h-[32%] shrink-0 overflow-y-auto border-b border-line px-4 py-3">
-      <h3 className="mb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase">在線成員</h3>
+      <h3 className="mb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase">
+        在線成員 <span className="ml-1 text-white/25">{shown.length}</span>
+      </h3>
+      <div className="mb-2 flex gap-1.5 overflow-x-auto overscroll-x-contain pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist" aria-label="成員頻道篩選" data-member-filter>
+        {[{ id: '*' as const, label: '全部' }, ...options].map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            role="tab"
+            aria-selected={active === o.id}
+            onClick={() => {
+              if (active !== o.id) navigator.vibrate?.(10)
+              setFilter(o.id)
+            }}
+            className={`min-h-10 shrink-0 rounded-full border px-3.5 text-xs font-semibold whitespace-nowrap ${active === o.id ? 'border-white bg-white text-black' : 'border-white/15 bg-white/[0.05] text-white/65'}`}
+            data-member-filter-chip={o.id}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
       <ul className="space-y-1.5">
-        {intercom.members.map((m) => (
+        {shown.map((m) => (
           <MemberRow
             key={m.id}
             member={m}
@@ -299,6 +324,7 @@ function MemberRow({
         <div className="truncate text-sm">
           {member.name}
           {self && <span className="ml-1.5 text-[10px] text-white/35">（你）</span>}
+          <span className="ml-1.5 rounded bg-white/10 px-1 py-px text-[9px] font-bold text-white/60">{intercomChannelLabel(member.channel)}</span>
         </div>
         <div className="flex gap-2 text-[10px] text-white/35">
           <span>{member.voice ? (member.micMode === 'ptt' ? 'PTT' : '開麥模式') : '僅文字'}</span>

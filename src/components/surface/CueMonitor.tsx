@@ -1,5 +1,8 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react'
+import { cuesForChannel, useChannelView } from '../../hooks/useChannelView'
+import { channelIds, reachesChannel } from '../../types/channels'
+import { ChannelChips } from '../console/ChannelChips'
 import { useCueMonitorState, type TileState } from '../../hooks/useCueMonitorState'
 import { formatTime } from '../../hooks/useServerNow'
 import type { useTheatreEngine } from '../../hooks/useTheatreEngine'
@@ -51,7 +54,7 @@ const readHeight = (key: string, fallback: number) => {
  */
 export function CueMonitor({
   engine,
-  cues,
+  cues: allCues,
   compact = false,
   open,
   onToggle,
@@ -63,6 +66,18 @@ export function CueMonitor({
   headerExtra,
 }: CueMonitorProps) {
   const { instances, newest, standby, tileState, timingOf, isPaused } = useCueMonitorState(engine)
+  // Audience group filter (shared with the console): only the cues that reach the chosen group.
+  const groupCount = engine.showState.channels.count
+  const [channelView, setChannelView] = useChannelView(groupCount)
+  const cues = useMemo(() => cuesForChannel(allCues, channelView, groupCount), [allCues, channelView, groupCount])
+  const runningPerChannel = useMemo(() => {
+    const out: Record<string, number> = {}
+    for (const inst of instances) {
+      if (inst.stopAt != null) continue
+      for (const id of channelIds(groupCount)) if (reachesChannel(inst.cue.targetChannels, id)) out[id] = (out[id] ?? 0) + 1
+    }
+    return out
+  }, [instances, groupCount])
   const [arranging, setArranging] = useState(false)
   const [height, setHeight] = useState(() => readHeight(heightKey, defaultHeight))
 
@@ -222,6 +237,11 @@ export function CueMonitor({
             exit={{ height: 0 }}
             className={`relative overflow-hidden ${fill ? 'flex min-h-0 flex-1 flex-col' : ''}`}
           >
+            {groupCount > 0 && (
+              <div className="px-2 pt-1">
+                <ChannelChips count={groupCount} value={channelView} onChange={setChannelView} running={runningPerChannel} small />
+              </div>
+            )}
             {(grid || free) && arranging && <GridSettings layout={layout} setLayout={setLayout} />}
             <div
               ref={listRef}

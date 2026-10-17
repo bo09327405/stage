@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { INTERCOM_CHANNELS, roleColor, type ChatMessage, type IntercomChannel } from '../../types/intercom'
+import { intercomChannelLabel, isGroupChannel, roleColor, type ChatMessage, type IntercomChannel } from '../../types/intercom'
 import { Avatar } from '../hub/Hub'
 import type { Intercom } from './intercomContext'
 
@@ -7,8 +7,8 @@ const QUICK_REPLIES = ['收到 Copy', '稍等 Hold', 'Standby 中', '可以 GO',
 /** How close to the bottom (px) still counts as "following" the conversation. */
 const FOLLOW_SLACK = 48
 
-const channelTag = (c: IntercomChannel | undefined) => (c === 'A' || c === 'B' ? `Ch ${c}` : 'All Call')
-const channelClass = (c: IntercomChannel | undefined) => (c === 'A' ? 'bg-accent/25 text-[#64a8ff]' : c === 'B' ? 'bg-[#bf5af2]/20 text-[#d29bf5]' : 'bg-standby/20 text-standby')
+const channelTag = (c: IntercomChannel | undefined) => intercomChannelLabel(c)
+const channelClass = (c: IntercomChannel | undefined) => (isGroupChannel(c) ? 'bg-go/20 text-go' : c === 'A' ? 'bg-accent/25 text-[#64a8ff]' : c === 'B' ? 'bg-[#bf5af2]/20 text-[#d29bf5]' : 'bg-standby/20 text-standby')
 const time = (at: number) => (at ? new Date(at).toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '…')
 
 /**
@@ -81,7 +81,7 @@ export function IntercomChat({
     }
   }
 
-  const channelLabel = INTERCOM_CHANNELS.find((c) => c.id === intercom.channel)?.label ?? ''
+  const channelLabel = intercomChannelLabel(intercom.channel)
 
   return (
     <section className="relative flex min-h-0 flex-1 flex-col" data-intercom-chat>
