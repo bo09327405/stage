@@ -13,10 +13,15 @@ interface CueBulkBarProps {
   updateCues: (ids: string[], changes: Partial<Omit<Cue, 'id'>>) => Promise<void>
   removeCues: (ids: string[]) => Promise<void>
   setCueNumbers: (numbers: Record<string, number>) => Promise<void>
+  /**
+   * Phone layout: instead of the bar over the list, a bar pinned to the bottom of the screen. It starts
+   * as one "編輯" button; in edit mode a tap on a cue ticks it, and the bar offers batch edit / delete.
+   */
+  bottom?: { editing: boolean; onEditingChange: (editing: boolean) => void }
 }
 
 /** Toolbar over the cue list while cues are multi-selected: select all / clear / edit / renumber / delete. */
-export function CueBulkBar({ cues, checked, onCheckedChange, onlineAudience, updateCues, removeCues, setCueNumbers }: CueBulkBarProps) {
+export function CueBulkBar({ cues, checked, onCheckedChange, onlineAudience, updateCues, removeCues, setCueNumbers, bottom }: CueBulkBarProps) {
   const [dialog, setDialog] = useState<'edit' | 'renumber' | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -37,10 +42,66 @@ export function CueBulkBar({ cues, checked, onCheckedChange, onlineAudience, upd
 
   const btn = 'min-h-9 rounded-lg px-3 text-xs font-medium whitespace-nowrap transition pointer-coarse:min-h-11'
 
+  const exitEditing = () => {
+    onCheckedChange(new Set())
+    setConfirmDelete(false)
+    bottom?.onEditingChange(false)
+  }
+  const tall = 'min-h-12 rounded-xl px-4 text-sm font-semibold whitespace-nowrap transition active:scale-[0.97] disabled:opacity-35'
+
   return (
     <>
+      {bottom && (
+        <div
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-[#161618]/95 px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] backdrop-blur-xl"
+          data-bulk-bottom
+        >
+          {!bottom.editing ? (
+            <button className={`${tall} w-full bg-white/[0.09] text-white`} onClick={() => bottom.onEditingChange(true)} data-bulk-enter>
+              ✎ 編輯
+            </button>
+          ) : (
+            <>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-sm font-semibold text-white">{count > 0 ? `已選 ${count} 個 Cue` : '點選要編輯的 Cue'}</span>
+                <span className="flex-1" />
+                <button className="min-h-10 rounded-lg px-3 text-xs text-white/70 active:bg-white/10" onClick={() => onCheckedChange(new Set(cues.map((c) => c.id)))}>
+                  全選
+                </button>
+                <button className="min-h-10 rounded-lg px-3 text-xs text-white/70 active:bg-white/10" onClick={() => onCheckedChange(new Set())} disabled={count === 0}>
+                  取消選取
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <button className={`${tall} flex-1 bg-accent text-white`} disabled={count === 0} onClick={() => setDialog('edit')} data-bulk-edit>
+                  ✎ 批次編輯
+                </button>
+                {confirmDelete ? (
+                  <button
+                    className={`${tall} flex-1 bg-panic text-white`}
+                    onClick={async () => {
+                      if (await run(() => removeCues(ids))) onCheckedChange(new Set())
+                      setConfirmDelete(false)
+                    }}
+                  >
+                    確定刪除 {count} 個
+                  </button>
+                ) : (
+                  <button className={`${tall} flex-1 bg-panic/20 text-panic`} disabled={count === 0} onClick={() => setConfirmDelete(true)} data-bulk-delete>
+                    🗑 刪除
+                  </button>
+                )}
+                <button className={`${tall} bg-white/[0.09] text-white`} onClick={confirmDelete ? () => setConfirmDelete(false) : exitEditing}>
+                  {confirmDelete ? '取消' : '完成'}
+                </button>
+              </div>
+              {error && <p className="mt-1 text-xs text-panic">{error}</p>}
+            </>
+          )}
+        </div>
+      )}
       <AnimatePresence>
-        {count > 0 && (
+        {!bottom && count > 0 && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}

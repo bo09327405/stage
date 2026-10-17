@@ -116,6 +116,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   // Phone / portrait iPad: Go Button layout (GO bar on top, DIM + Master rail, editor as a full-screen sheet).
   const compact = useGoButtonLayout()
   const [mobileSheet, setMobileSheet] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
   const [savingAs, setSavingAs] = useState(false)
   const [triggersOpen, setTriggersOpen] = useState(false)
   // Full control mode (surface fills the page) and the collapsible editor column.
@@ -599,7 +600,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
           </aside>
 
           {/* Center: cue list + hits */}
-          <main className="flex min-h-[70dvh] shrink-0 flex-col lg:min-h-0 lg:shrink">
+          <main className={`flex min-h-[70dvh] shrink-0 flex-col lg:min-h-0 lg:shrink ${compact ? 'pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]' : ''}`}>
             <div className="flex items-center justify-between px-5 pt-4 pb-1">
               <h1 className="text-[11px] font-semibold tracking-widest text-white/50 uppercase">
                 Cue List <span className="ml-1 text-white/25">{cues.length}</span>
@@ -632,10 +633,11 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
               updateCues={updateCues}
               removeCues={removeCues}
               setCueNumbers={setCueNumbers}
+              bottom={compact ? { editing: selectMode, onEditingChange: setSelectMode } : undefined}
             />
             <div className={`min-h-[240px] flex-1 ${compact ? 'flex' : 'overflow-y-auto'}`}>
               {compact && (
-                <div className="sticky top-[176px] z-20 h-[calc(100dvh-176px-env(safe-area-inset-bottom,0px))] shrink-0 self-start border-r border-line bg-[#151517]">
+                <div className="sticky top-[176px] z-20 h-[calc(100dvh-176px-5rem-env(safe-area-inset-bottom,0px))] shrink-0 self-start border-r border-line bg-[#151517]">
                   <MobileSideRail
                     effective={showState.masterVolume * dimGain(showState.dim, showState.dim ? clampDimDb(showState.dimDb ?? DEFAULT_DIM_DB) : consoleDimDb)}
                     dim={showState.dim}
@@ -661,6 +663,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                   now={now}
                   standbyId={standbyCue?.id ?? null}
                   selectedId={editingCue?.id ?? null}
+                  selectMode={compact && selectMode}
                   onSelect={(cue) => openEditor({ mode: 'edit', cueId: cue.id })}
                   onStandby={(cue) => engine.standby(cue).catch(ignore)}
                   onDelete={(cue) => {

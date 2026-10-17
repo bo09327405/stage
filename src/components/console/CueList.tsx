@@ -19,6 +19,8 @@ interface CueListProps {
   checked: Set<string>
   onCheckedChange: (ids: Set<string>) => void
   onSelect: (cue: Cue) => void
+  /** Phone edit mode: a tap ticks the cue (for batch edit / delete) instead of selecting it. */
+  selectMode?: boolean
   onStandby: (cue: Cue) => void
   /** Swipe-left tray: delete this cue (the caller confirms). */
   onDelete?: (cue: Cue) => void
@@ -46,6 +48,7 @@ export function CueList({
   checked,
   onCheckedChange,
   onSelect,
+  selectMode,
   onStandby,
   onDelete,
   onStop,
@@ -132,6 +135,7 @@ export function CueList({
               isChecked={checked.has(id)}
               dragging={draggingId === id}
               coarse={coarse}
+              selectMode={!!selectMode}
               paused={paused}
               onBeginDrag={() => beginDrag(id)}
               onRowClick={(e) => {
@@ -141,6 +145,7 @@ export function CueList({
                 }
                 if (e.metaKey || e.ctrlKey) toggle(id, false)
                 else if (e.shiftKey) toggle(id, true)
+                else if (selectMode) toggle(id, false)
                 else if (coarse) onStandby(cue)
                 else onSelect(cue)
               }}
@@ -167,6 +172,7 @@ function CueRow({
   isChecked,
   dragging,
   coarse,
+  selectMode,
   paused,
   onBeginDrag,
   onRowClick,
@@ -185,6 +191,7 @@ function CueRow({
   isChecked: boolean
   dragging: boolean
   coarse: boolean
+  selectMode: boolean
   paused: boolean
   onBeginDrag: () => void
   onRowClick: (e: ReactMouseEvent) => void
@@ -219,7 +226,7 @@ function CueRow({
     if (e.pointerType === 'mouse' || (e.target as HTMLElement).closest?.('button, input, a')) return
     swipe.current = { x: e.clientX, y: e.clientY, id: e.pointerId, active: false, base: tray ? -TRAY : 0 }
     cancelHold()
-    if (tray) return
+    if (tray || selectMode) return
     hold.current = {
       x: e.clientX,
       y: e.clientY,
@@ -383,7 +390,7 @@ function CueRow({
             e.stopPropagation()
             onCheck(e.shiftKey)
           }}
-          className="h-4 w-4 shrink-0 cursor-pointer accent-[#0a84ff] pointer-coarse:hidden"
+          className={`h-4 w-4 shrink-0 cursor-pointer accent-[#0a84ff] ${selectMode ? 'pointer-coarse:mt-2.5 pointer-coarse:h-6 pointer-coarse:w-6' : 'pointer-coarse:hidden'}`}
           aria-label={`選取 Q${cue.cueNumber}`}
         />
         {/* Touch: round number badge (green = playing, orange = selected / next GO, red = idle) */}
