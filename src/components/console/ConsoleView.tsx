@@ -559,9 +559,10 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
           open={channelSettingsOpen}
           onClose={() => setChannelSettingsOpen(false)}
           config={showState.channels}
-          online={presence.length}
+          audience={presence}
           admin={admin}
           onChange={(changes) => engine.setChannels(changes)}
+          onAssign={(changes) => engine.assignAudience(changes)}
         />
         <AnnouncePanel
           open={announceOpen}

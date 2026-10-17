@@ -60,7 +60,7 @@ export function AudienceView({ pinned }: { pinned: ShowRef | null }) {
 function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) {
   const { showState, connected, serverNow, loaded } = useTheatreEngine('audience', { basePath: versionPath(show) })
   // Audience group (Ch 1 … Ch N): chosen on this device, valid for the current grouping only.
-  const grouping = useAudienceChannel(show.projectId, showState.channels)
+  const grouping = useAudienceChannel(show.projectId, showState.channels, audienceId)
   const { channel } = grouping
   useAnnouncePresence(show, audienceId, channel)
   useEffect(() => stageAudio.setChannel(channel), [channel])
@@ -186,6 +186,7 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
       data-audience-group={channel}
     >
       📍 您已加入：{channelLabel(channel).replace('Ch ', '第 ')}{channel ? ' 組' : ''}
+      {grouping.assigned && <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-semibold">由工作人員指派</span>}
       {grouping.canSwitch && (
         <button type="button" onClick={(e) => {
             e.stopPropagation()

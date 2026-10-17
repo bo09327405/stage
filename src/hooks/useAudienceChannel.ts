@@ -35,13 +35,16 @@ export function groupFromUrl(): string | null {
  * it was chosen under (same group count, same reset "epoch"), so the operator can re-group or reset and
  * every phone is asked again. Without grouping (count 0) the device has no channel.
  */
-export function useAudienceChannel(projectId: string, config: ChannelConfig) {
+export function useAudienceChannel(projectId: string, config: ChannelConfig, audienceId: string) {
   const [stored, setStored] = useState<Stored | null>(() => read(projectId))
   // The user tapped "change group": show the full list again (also when the link named a group).
   const [switching, setSwitching] = useState(false)
   const [, setTick] = useState(0)
-  const valid = config.count > 0 && !!stored && stored.epoch === config.epoch && channelIds(config.count).includes(stored.channel)
-  const channel = config.count > 0 && valid ? stored!.channel : null
+  // The operator may have placed this device in a group (console → 觀眾分配): that wins over its own pick.
+  const assigned = config.count > 0 && channelIds(config.count).includes(config.assign[audienceId] ?? '') ? config.assign[audienceId] : null
+  const picked = config.count > 0 && !!stored && stored.epoch === config.epoch && channelIds(config.count).includes(stored.channel)
+  const valid = !!assigned || picked
+  const channel = config.count > 0 && valid ? (assigned ?? stored!.channel) : null
   // The link's group, if it fits this show's grouping.
   const fromUrl = groupFromUrl()
   const linked = fromUrl && config.count > 0 && channelIds(config.count).includes(fromUrl) ? fromUrl : null
@@ -61,8 +64,9 @@ export function useAudienceChannel(projectId: string, config: ChannelConfig) {
   )
   // Switching is open when the operator unlocked it, and always for a few minutes after choosing, so a
   // wrong tap can be corrected.
-  const graceLeft = valid && stored?.at ? stored.at + GRACE_MS - Date.now() : 0
-  const canSwitch = valid && (config.open || graceLeft > 0)
+  // A pick saved before the timestamp existed counts as just made.
+  const graceLeft = picked && !assigned ? (stored?.at ? stored.at + GRACE_MS - Date.now() : GRACE_MS) : 0
+  const canSwitch = !assigned && picked && (config.open || graceLeft > 0)
   useEffect(() => {
     if (config.open || graceLeft <= 0) return
     const timer = window.setTimeout(() => setTick((t) => t + 1), graceLeft + 50)
@@ -74,9 +78,11 @@ export function useAudienceChannel(projectId: string, config: ChannelConfig) {
 
   return {
     channel,
-    needsPick: config.count > 0 && (!valid || switching),
+    needsPick: config.count > 0 && (!valid || (switching && !assigned)),
     /** The picker is open to change an existing choice (offers "keep my group"). */
-    switching: valid && switching,
+    switching: valid && switching && !assigned,
+    /** Placed in this group by the operator: can't be changed from the device. */
+    assigned: !!assigned,
     canSwitch,
     linked: switching ? null : linked,
     choose,

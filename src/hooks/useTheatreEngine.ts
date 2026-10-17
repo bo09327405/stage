@@ -557,9 +557,18 @@ export function useTheatreEngine(role: EngineRole, { basePath, cues = [] }: Engi
 
   /** Audience grouping settings (group count, self-service switching, epoch for "reset"). */
   const setChannels = useCallback(
-    (changes: Partial<ChannelConfig>) => {
+    (changes: Partial<Omit<ChannelConfig, 'assign'>> & { assign?: null }) => {
       assertConsole('setChannels')
       return run(update(ref(db, `${statePath}/channels`), { ...changes }))
+    },
+    [assertConsole, run, statePath],
+  )
+
+  /** Place audience devices in groups by hand (code → channel_n); null removes the assignment. */
+  const assignAudience = useCallback(
+    (changes: Record<string, string | null>) => {
+      assertConsole('assignAudience')
+      return run(update(ref(db, `${statePath}/channels/assign`), changes))
     },
     [assertConsole, run, statePath],
   )
@@ -704,6 +713,7 @@ export function useTheatreEngine(role: EngineRole, { basePath, cues = [] }: Engi
     setMuted,
     setHitsPage,
     setChannels,
+    assignAudience,
     announce,
     stopHits,
     setMasterVolume,

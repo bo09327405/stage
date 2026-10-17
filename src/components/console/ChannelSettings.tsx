@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { MAX_CHANNELS, type ChannelConfig } from '../../types/channels'
+import type { PresenceEntry } from '../../services/presence'
+import { MAX_CHANNELS, channelColor, channelIds, channelLabel, type ChannelConfig } from '../../types/channels'
 import { BottomSheet } from '../ui/BottomSheet'
 import { useSafetyConfirm } from '../ui/SafetyConfirm'
 
@@ -12,21 +13,25 @@ export function ChannelSettings({
   open,
   onClose,
   config,
-  online,
+  audience,
   admin,
   onChange,
+  onAssign,
 }: {
   open: boolean
   onClose: () => void
   config: ChannelConfig
-  /** Audience devices connected now (for the warning text). */
-  online: number
+  /** Audience devices connected now (with the group each one is in). */
+  audience: PresenceEntry[]
   admin: boolean
-  onChange: (changes: Partial<ChannelConfig>) => Promise<void>
+  onChange: (changes: Partial<Omit<ChannelConfig, 'assign'>> & { assign?: null }) => Promise<void>
+  /** Place devices in groups by hand: audience code → channel_n, or null to hand control back to the device. */
+  onAssign: (changes: Record<string, string | null>) => Promise<void>
 }) {
+  const online = audience.length
   const [safety, confirm] = useSafetyConfirm()
   const [error, setError] = useState<string | null>(null)
-  const apply = async (changes: Partial<ChannelConfig>) => {
+  const apply = async (changes: Partial<Omit<ChannelConfig, 'assign'>> & { assign?: null }) => {
     try {
       setError(null)
       await onChange(changes)
@@ -46,7 +51,7 @@ export function ChannelSettings({
         </>
       ),
     })
-    if (ok) await apply({ count, epoch: config.epoch + 1 })
+    if (ok) await apply({ count, epoch: config.epoch + 1, assign: null })
   }
 
   const reset = async () => {
@@ -55,7 +60,39 @@ export function ChannelSettings({
       detail: <>{people}所有觀眾手機會立刻跳回「選擇組別」畫面，必須重新加入才收得到導引與聲音。</>,
       confirmLabel: '確認重設 (Reset)',
     })
-    if (ok) await apply({ epoch: config.epoch + 1 })
+    if (ok) await apply({ epoch: config.epoch + 1, assign: null })
+  }
+
+  const groups = channelIds(config.count)
+  const assignOne = async (audienceId: string, channel: string) => {
+    try {
+      setError(null)
+      await onAssign({ [audienceId]: channel || null })
+      navigator.vibrate?.(10)
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+  const distribute = async () => {
+    const ok = await confirm({
+      title: '平均分配所有在線觀眾？',
+      detail: (
+        <>
+          目前在線的 <b className="text-white">{online} 台</b>觀眾裝置會依序平均分到 Ch 1 – Ch {config.count}，<b className="text-white">立刻覆蓋</b>他們原本的組別；之後他們無法自行換組，直到你取消指派。
+        </>
+      ),
+      confirmLabel: '確認分配 (Assign)',
+    })
+    if (!ok) return
+    await onAssign(Object.fromEntries(audience.map((a, i) => [a.audienceId, groups[i % groups.length]]))).catch((err: Error) => setError(err.message))
+  }
+  const clearAssign = async () => {
+    const ok = await confirm({
+      title: '取消所有指派？',
+      detail: <>所有手動指派的觀眾會回到自己選的組別（沒選過的會被要求重新選擇）。</>,
+      confirmLabel: '確認取消指派',
+    })
+    if (ok) await onAssign(Object.fromEntries(Object.keys(config.assign).map((k) => [k, null]))).catch((err: Error) => setError(err.message))
   }
 
   const toggleOpen = async () => {
@@ -125,6 +162,54 @@ export function ChannelSettings({
               ⟲ 重設所有觀眾的組別
             </button>
           </>
+        )}
+        {config.count > 0 && (
+          <div data-assign-audience>
+            <div className="mb-2 flex items-baseline justify-between">
+              <span className="text-[11px] font-semibold tracking-widest text-white/50 uppercase">指派觀眾到分組</span>
+              <span className="text-[11px] text-white/35">{online} 台在線 · 已指派 {Object.keys(config.assign).length}</span>
+            </div>
+            {audience.length === 0 ? (
+              <p className="rounded-lg bg-white/[0.03] p-3 text-xs text-white/35">目前沒有觀眾連線。觀眾進入後會出現在這裡，你就能直接把他們放進指定組別。</p>
+            ) : (
+              <ul className="max-h-64 space-y-1.5 overflow-y-auto">
+                {audience.map((a) => {
+                  const assigned = config.assign[a.audienceId] ?? ''
+                  return (
+                    <li key={a.audienceId} className="flex min-h-12 items-center gap-2 rounded-xl bg-white/[0.04] px-3" data-assign-row={a.audienceId}>
+                      <span className="font-mono text-sm font-bold tracking-[0.15em] text-white/80">{a.audienceId}</span>
+                      <span className="min-w-0 flex-1 truncate text-[11px]" style={{ color: a.channel ? channelColor(a.channel) : undefined }}>
+                        {a.channel ? channelLabel(a.channel) : '尚未選組'}
+                        {assigned ? ' 📌' : ''}
+                      </span>
+                      <select
+                        value={assigned}
+                        disabled={!admin}
+                        onChange={(e) => void assignOne(a.audienceId, e.target.value)}
+                        aria-label={`指派 ${a.audienceId} 的組別`}
+                        className="min-h-10 rounded-lg border border-white/10 bg-black/40 px-2 text-xs text-white disabled:opacity-40"
+                      >
+                        <option value="">自己選擇</option>
+                        {groups.map((g) => (
+                          <option key={g} value={g}>
+                            指派到 {channelLabel(g)}
+                          </option>
+                        ))}
+                      </select>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button type="button" disabled={!admin || audience.length === 0} onClick={() => void distribute()} className="min-h-11 rounded-xl bg-accent/20 text-xs font-semibold text-[#64a8ff] disabled:opacity-40" data-assign-distribute>
+                平均分配在線觀眾
+              </button>
+              <button type="button" disabled={!admin || Object.keys(config.assign).length === 0} onClick={() => void clearAssign()} className="min-h-11 rounded-xl bg-white/10 text-xs font-semibold text-white/70 disabled:opacity-40" data-assign-clear>
+                取消所有指派
+              </button>
+            </div>
+          </div>
         )}
         {error && <p className="text-xs text-panic">{error}</p>}
       </BottomSheet>

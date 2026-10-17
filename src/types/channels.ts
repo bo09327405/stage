@@ -23,19 +23,23 @@ export const channelColor = (id: string) => (id === CHANNEL_ALL || id === TARGET
 export interface ChannelConfig {
   /** 0 = no grouping ("ALL"), otherwise 2–10 groups. */
   count: number
-  /** Audience may change its own group. Off = a device keeps the group it chose until the operator resets it. */
+  /** Audience may change its own group (default). Off = only a short correction window after choosing. */
   open: boolean
   /** Bumped by "reset channels": devices that joined under an older epoch must choose again. */
   epoch: number
+  /** Devices the operator placed in a group by hand: audience code → channel_n. Wins over the device's own pick. */
+  assign: Record<string, string>
 }
-export const DEFAULT_CHANNELS: ChannelConfig = { count: 0, open: false, epoch: 0 }
+export const DEFAULT_CHANNELS: ChannelConfig = { count: 0, open: true, epoch: 0, assign: {} }
 
 export function normalizeChannels(raw: Partial<ChannelConfig> | null | undefined): ChannelConfig {
   const count = Number(raw?.count)
   return {
     count: Number.isFinite(count) && count >= 2 ? Math.min(MAX_CHANNELS, Math.floor(count)) : 0,
-    open: raw?.open === true,
+    // Self-service switching is on unless the operator locked it.
+    open: raw?.open !== false,
     epoch: Number(raw?.epoch) || 0,
+    assign: Object.fromEntries(Object.entries(raw?.assign ?? {}).filter(([, v]) => typeof v === 'string' && /^channel_\d+$/.test(v))),
   }
 }
 
