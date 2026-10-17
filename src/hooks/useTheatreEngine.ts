@@ -2,6 +2,7 @@ import { increment, onValue, push, ref, runTransaction, serverTimestamp, set, up
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { db } from '../services/firebase'
 import { clampDimDb } from '../utils/dim'
+import { normalizeChannels, type Announcement, type ChannelConfig } from '../types/channels'
 import type { ExecutorRun, SeqCue } from '../types/sequence'
 import {
   DEFAULT_SHOW_FX,
@@ -61,6 +62,8 @@ function normalizeShowState(raw: Record<string, unknown> | null): ShowState {
         .map(([no, e]) => [no, { sequenceId: e.sequenceId!, cueId: e.cueId ?? null, instanceId: e.instanceId ?? null, firedAt: Number(e.firedAt) || 0 }]),
     ),
     execLevels: state.execLevels ?? {},
+    channels: normalizeChannels(state.channels),
+    announce: state.announce?.id ? state.announce : null,
   }
 }
 
@@ -256,12 +259,14 @@ export function useTheatreEngine(role: EngineRole, { basePath, cues = [] }: Engi
    */
   const panic = useCallback(() => {
     assertConsole('panic')
-    const { masterVolume, dim, muted, hitsPage, sequence, hitStop, execLevels } = stateRef.current
+    const { masterVolume, dim, muted, hitsPage, sequence, hitStop, execLevels, channels } = stateRef.current
     return run(
       set(ref(db, statePath), {
         ...INITIAL_SHOW_STATE,
         // Executor faders stay where they are; what the executors were running is cleared.
         execLevels,
+        // The audience's grouping survives a Stop: devices keep their group.
+        channels,
         masterVolume,
         dim,
         muted,
@@ -550,6 +555,25 @@ export function useTheatreEngine(role: EngineRole, { basePath, cues = [] }: Engi
     [assertConsole, run, statePath],
   )
 
+  /** Audience grouping settings (group count, self-service switching, epoch for "reset"). */
+  const setChannels = useCallback(
+    (changes: Partial<ChannelConfig>) => {
+      assertConsole('setChannels')
+      return run(update(ref(db, `${statePath}/channels`), { ...changes }))
+    },
+    [assertConsole, run, statePath],
+  )
+
+  /** One-way announcement to the audience (all groups, or one): chime / vibration / spoken text on their devices. */
+  const announce = useCallback(
+    (message: Omit<Announcement, 'id' | 'at'>) => {
+      assertConsole('announce')
+      const id = push(ref(db, `${statePath}/announce`)).key!
+      return run(set(ref(db, `${statePath}/announce`), { ...message, id, at: Date.now() }))
+    },
+    [assertConsole, run, statePath],
+  )
+
   const setHitsPage = useCallback(
     (page: number) => {
       assertConsole('setHitsPage')
@@ -679,6 +703,8 @@ export function useTheatreEngine(role: EngineRole, { basePath, cues = [] }: Engi
     oops,
     setMuted,
     setHitsPage,
+    setChannels,
+    announce,
     stopHits,
     setMasterVolume,
     setDim,

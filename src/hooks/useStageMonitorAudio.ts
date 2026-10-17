@@ -29,7 +29,7 @@ let consumers = 0
  */
 export function useStageMonitorAudio(engine: ReturnType<typeof useTheatreEngine>, projectId: string): MonitorAudio {
   const { showState, serverNow } = engine
-  const { sound: enabled, audience, dim: monitorDim, dimDb: monitorDimDb } = useStageMonitor()
+  const { sound: enabled, audience, channel, dim: monitorDim, dimDb: monitorDimDb } = useStageMonitor()
   const [state, setState] = useState(() => stageAudio.contextState)
   const [blocked, setBlocked] = useState(false)
   const [primed, setPrimed] = useState(() => stageAudio.isPrimed)
@@ -94,6 +94,7 @@ export function useStageMonitorAudio(engine: ReturnType<typeof useTheatreEngine>
   }, [enabled])
 
   useEffect(() => stageAudio.setAudience(audience), [audience])
+  useEffect(() => stageAudio.setChannel(channel || null), [channel])
   useEffect(() => stageAudio.setProject(projectId), [projectId])
   useEffect(() => {
     if (enabled) stageAudio.prepare(showState.standbyCue)
@@ -103,7 +104,7 @@ export function useStageMonitorAudio(engine: ReturnType<typeof useTheatreEngine>
   const unlocked = state !== 'none'
   useEffect(() => {
     stageAudio.sync(enabled ? showState.active : {}, showState.pausedAt)
-  }, [enabled, unlocked, audience, showState.active, showState.pausedAt])
+  }, [enabled, unlocked, audience, channel, showState.active, showState.pausedAt])
   useEffect(() => {
     stageAudio.setMaster(showState.masterVolume, showState.dim, showState.muted || !enabled, showState.dimDb)
   }, [enabled, unlocked, showState.masterVolume, showState.dim, showState.muted, showState.dimDb])

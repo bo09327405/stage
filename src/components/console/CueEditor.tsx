@@ -28,6 +28,7 @@ import { defaultMatch } from '../../types/trigger'
 import { TriggerMatchEditor } from '../ui/TriggerMatchEditor'
 import { AfterStartPanel } from './AfterStartPanel'
 import { AudienceTargeting } from './AudienceTargeting'
+import { ChannelTargets } from './ChannelTargets'
 import { InboxPickerModal } from './InboxPickerModal'
 import { StudioBinding } from './StudioBinding'
 import { WaveformTrimmer } from './WaveformTrimmer'
@@ -95,6 +96,8 @@ interface CueEditorProps {
   allCues: Cue[]
   projectId: string
   projectName: string
+  /** Audience channel groups of this show (0 = not grouped). */
+  channelCount?: number
   onSave: (draft: Draft) => Promise<unknown>
   onDelete?: () => void
   onClose: () => void
@@ -109,6 +112,7 @@ export function CueEditor({
   allCues,
   projectId,
   projectName,
+  channelCount = 0,
   onSave,
   onDelete,
   onClose,
@@ -601,12 +605,15 @@ export function CueEditor({
         )}
 
         {tab === 'target' && (
+          <div className="space-y-6">
+          <ChannelTargets count={channelCount} value={draft.targetChannels} onChange={(targetChannels) => setDraft((d) => ({ ...d, targetChannels }))} />
           <AudienceTargeting
             mode={draft.targetMode}
             ids={draft.targetIds}
             online={onlineAudience}
             onChange={(mode, ids) => setDraft((d) => ({ ...d, targetMode: mode, targetIds: ids }))}
           />
+          </div>
         )}
       </div>
 

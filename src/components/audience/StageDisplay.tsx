@@ -38,6 +38,7 @@ export function StageDisplay({
   showState,
   serverNow,
   audienceId,
+  audienceChannel = null,
   show,
   preview = false,
   previewSound = false,
@@ -45,6 +46,8 @@ export function StageDisplay({
   showState: ShowState
   serverNow: () => number
   audienceId: string
+  /** This device's audience group (channel_n), or null when the show isn't grouped. */
+  audienceChannel?: string | null
   show: ShowRef
   /**
    * Console simulation (Stage window): same picture, but videos play muted on their own element
@@ -55,7 +58,7 @@ export function StageDisplay({
   previewSound?: boolean
 }) {
   // Only cues broadcast to everyone or targeted at this device's code.
-  const instances = activeList(showState).filter((a) => cueTargets(a.cue, audienceId))
+  const instances = activeList(showState).filter((a) => cueTargets(a.cue, audienceId, audienceChannel))
   // Coarse ticking is enough to reveal cues after pre-wait and hide them when they end.
   // While paused the clock is frozen, so nothing appears, disappears or advances.
   const liveNow = useServerNow(serverNow, instances.length > 0 && showState.pausedAt == null, 100)

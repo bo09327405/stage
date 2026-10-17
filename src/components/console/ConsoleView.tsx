@@ -7,7 +7,12 @@ import { StudioMenu } from './StudioMenu'
 import { useHeaderCollapse } from '../../utils/headerCollapse'
 import { listenForFocusRequests } from '../../services/navigation'
 import { useProjectLock } from '../../services/projectLock'
-import { useAuth } from '../../services/auth'
+import { isAdmin, useAuth } from '../../services/auth'
+import { CHANNEL_ALL, channelIds, reachesChannel } from '../../types/channels'
+import { AnnouncePanel } from './AnnouncePanel'
+import { ChannelChips } from './ChannelChips'
+import { ChannelOverview } from './ChannelOverview'
+import { ChannelSettings } from './ChannelSettings'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useMemo, useState } from 'react'
 import { useCueList } from '../../hooks/useCueList'
@@ -116,6 +121,9 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   // Phone / portrait iPad: Go Button layout (GO bar on top, DIM + Master rail, editor as a full-screen sheet).
   const compact = useGoButtonLayout()
   const [mobileSheet, setMobileSheet] = useState(false)
+  const [channelSettingsOpen, setChannelSettingsOpen] = useState(false)
+  const [announceOpen, setAnnounceOpen] = useState(false)
+  const [channelPick, setChannelPick] = useState(() => readPref(`theatre.channelView.${show.projectId}`) ?? CHANNEL_ALL)
   const [selectMode, setSelectMode] = useState(false)
   const [savingAs, setSavingAs] = useState(false)
   const [triggersOpen, setTriggersOpen] = useState(false)
@@ -167,6 +175,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   // doesn't trigger saves.
   const pid = show.projectId
   const user = useAuth().user
+  const admin = isAdmin(user)
   const lock = useProjectLock(pid, user)
   const autoSave = useR2AutoSave(
     // Read-only viewers (official template, locked) never save over the project's file.
@@ -237,6 +246,30 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   const now = showClock(showState, liveNow)
 
   // Latest instance per cue, for row progress bars.
+  // Audience channel groups: which one the console is focused on (ALL = overview of every group).
+  const channelCount = showState.channels.count
+  const channelView = channelCount > 0 && channelIds(channelCount).includes(channelPick) ? channelPick : CHANNEL_ALL
+  const chooseChannel = (view: string) => {
+    setChannelPick(view)
+    writePref(`theatre.channelView.${show.projectId}`, view)
+  }
+  const visibleCues = useMemo(
+    () => (channelCount > 0 && channelView !== CHANNEL_ALL ? cues.filter((c) => reachesChannel(c.targetChannels, channelView)) : cues),
+    [cues, channelCount, channelView],
+  )
+  const runningPerChannel = useMemo(() => {
+    const out: Record<string, number> = {}
+    for (const inst of instances) {
+      if (inst.stopAt != null) continue
+      for (const id of channelIds(channelCount)) if (reachesChannel(inst.cue.targetChannels, id)) out[id] = (out[id] ?? 0) + 1
+    }
+    return out
+  }, [instances, channelCount])
+  const onlinePerChannel = useMemo(() => {
+    const out: Record<string, number> = {}
+    for (const p of presence) if (p.channel) out[p.channel] = (out[p.channel] ?? 0) + 1
+    return out
+  }, [presence])
   const running = useMemo(() => {
     const map = new Map<string, ActiveCue>()
     for (const inst of instances) map.set(inst.cue.id, inst)
@@ -414,6 +447,26 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
             {/* Lit while this tab is the trigger host; flashes on every incoming MIDI/OSC signal. */}
             <ActivityDot connected={router.isHost} />
           </button>
+          {admin && (
+            <>
+              <button
+                onClick={() => setChannelSettingsOpen(true)}
+                className="min-h-10 rounded-lg bg-white/[0.06] px-3 text-xs text-white/70 hover:bg-white/10 hover:text-white"
+                title="觀眾分組（Ch 1 – Ch 10）"
+                data-setcue-channels
+              >
+                📡 分組{channelCount > 0 ? ` ${channelCount}` : ''}
+              </button>
+              <button
+                onClick={() => setAnnounceOpen(true)}
+                className="min-h-10 rounded-lg bg-white/[0.06] px-3 text-xs text-white/70 hover:bg-white/10 hover:text-white"
+                title="對觀眾單向廣播（提示音 / 震動 / 朗讀）"
+                data-setcue-announce
+              >
+                📢 廣播
+              </button>
+            </>
+          )}
           <button
             onClick={() => setProjectOpen(true)}
             className="min-h-10 rounded-lg bg-white/[0.06] px-3 text-xs text-white/70 hover:bg-white/10 hover:text-white"
@@ -507,6 +560,24 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
           apply={applySetCueVersion(pid)}
           summarize={summarizeSetCue}
           preview={(state) => <SetCueVersionPreview state={state} versionId={show.versionId} />}
+        />
+        <ChannelSettings
+          open={channelSettingsOpen}
+          onClose={() => setChannelSettingsOpen(false)}
+          config={showState.channels}
+          online={presence.length}
+          admin={admin}
+          onChange={(changes) => engine.setChannels(changes)}
+        />
+        <AnnouncePanel
+          open={announceOpen}
+          onClose={() => setAnnounceOpen(false)}
+          projectId={show.projectId}
+          count={channelCount}
+          admin={admin}
+          online={presence.length}
+          send={(message) => engine.announce(message)}
+          defaultChannel={channelView}
         />
         <AnimatePresence>{intercomOpen && <IntercomPanel intercom={intercom} onClose={() => setIntercomOpen(false)} />}</AnimatePresence>
         <CallFlash intercom={intercom} />
@@ -609,6 +680,16 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                 Cue List <span className="ml-1 text-white/25">{cues.length}</span>
               </h1>
               <div className="flex items-center gap-2">
+                {compact && admin && (
+                  <>
+                    <button onClick={() => setChannelSettingsOpen(true)} className="min-h-10 rounded-lg bg-white/[0.07] px-3 text-xs font-medium text-white/80" aria-label="觀眾分組">
+                      📡
+                    </button>
+                    <button onClick={() => setAnnounceOpen(true)} className="min-h-10 rounded-lg bg-white/[0.07] px-3 text-xs font-medium text-white/80" aria-label="觀眾廣播">
+                      📢
+                    </button>
+                  </>
+                )}
                 {compact && (
                   <button
                     onClick={() => {
@@ -628,8 +709,10 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                 </button>
               </div>
             </div>
+            <ChannelChips count={channelCount} value={channelView} onChange={chooseChannel} running={runningPerChannel} />
+            {channelCount > 0 && channelView === CHANNEL_ALL && <ChannelOverview count={channelCount} instances={instances} now={now} online={onlinePerChannel} onPick={chooseChannel} />}
             <CueBulkBar
-              cues={cues}
+              cues={visibleCues}
               checked={checked}
               onCheckedChange={setChecked}
               onlineAudience={onlineAudience}
@@ -664,7 +747,8 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                   checked={checked}
                   onCheckedChange={setChecked}
                   onRenumber={(numbers) => setCueNumbers(numbers).catch(ignore)}
-                  cues={cues}
+                  cues={visibleCues}
+                  showChannels={channelCount > 0}
                   running={running}
                   now={now}
                   standbyId={standbyCue?.id ?? null}
@@ -711,10 +795,22 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
               <span className="lg:[writing-mode:vertical-rl]">展開編輯區{unseen > 0 ? ` · 收件匣 +${unseen}` : ''}</span>
             </button>
           ) : (
+          <>
+          {compact && (
+            // Phones: the editor is a bottom sheet over a blurred dark backdrop; tapping the backdrop closes it.
+            <div
+              className="fixed inset-0 z-[69] bg-black/60 backdrop-blur-sm"
+              onClick={() => {
+                setMobileSheet(false)
+                setEditor(null)
+              }}
+              data-mobile-sheet-backdrop
+            />
+          )}
           <aside
             className={
               compact
-                ? 'fixed inset-0 z-[70] flex flex-col bg-[#0b0b0d] pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]'
+                ? 'fixed inset-x-0 bottom-0 z-[70] flex h-[92dvh] flex-col overflow-hidden rounded-t-3xl border border-b-0 border-line bg-[#0b0b0d] pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-20px_60px_-20px_rgba(0,0,0,0.9)]'
                 : 'relative flex min-h-[520px] shrink-0 flex-col border-t border-line bg-panel/50 backdrop-blur-xl lg:min-h-0 lg:border-t-0 lg:border-l'
             }
             data-mobile-sheet={compact || undefined}
@@ -780,7 +876,8 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                     {editor.mode === 'create' ? (
                       <CueEditor
                         cue={null}
-                        initial={{ ...DEFAULT_CUE, cueNumber: nextCueNumber }}
+                        initial={{ ...DEFAULT_CUE, cueNumber: nextCueNumber, targetChannels: channelCount > 0 && channelView !== CHANNEL_ALL ? [channelView] : ['all'] }}
+                        channelCount={channelCount}
                         onlineAudience={onlineAudience}
                         inbox={uploads}
                         allCues={cues}
@@ -796,6 +893,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                     ) : editingCue ? (
                       <CueEditor
                         cue={editingCue}
+                        channelCount={channelCount}
                         initial={stripId(editingCue)}
                         onlineAudience={onlineAudience}
                         inbox={uploads}
@@ -830,6 +928,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
               </AnimatePresence>
             </div>
           </aside>
+          </>
           )}
         </div>
 

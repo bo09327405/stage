@@ -51,6 +51,12 @@
             ".write": "((auth != null && auth.token.email_verified == true && (auth.token.email.toLowerCase() == 'bo0912013792@gmail.com' || auth.token.email.toLowerCase() == 'bo09327405@mail2.chshs.ntpc.edu.tw')) || ((auth != null && (newData.parent().parent().parent().parent().child('projectIndex').child($pid).child('owner/uid').val() == auth.uid || newData.parent().parent().parent().parent().child('projectIndex').child($pid).child('collaborators').child(auth.uid).exists())) && !(root.child('projectIndex').child($pid).child('isLocked').val() == true || root.child('projectIndex').child($pid).child('isMasterTemplate').val() == true || root.child('projectIndex').child($pid).child('isArchived').val() == true)) || (!data.exists() && newData.exists()))"
           }
         },
+        "audiencePush": {
+          "$aid": {
+            ".write": true,
+            ".validate": "newData.val() == null || (newData.hasChildren(['sub', 'channel', 'updatedAt']) && newData.child('sub/endpoint').isString() && newData.child('sub/endpoint').val().length < 800 && newData.child('channel').isString() && newData.child('channel').val().length < 20)"
+          }
+        },
         "studio": {
           "$sid": {
             ".read": "root.child('projects').child($pid).child('audienceStudios').child($sid).val() == true",

@@ -152,6 +152,31 @@ export class StageAudioEngine {
     return this.ctx?.state ?? 'none'
   }
 
+  /** The audience group (channel_n) this device belongs to; null = not grouped. */
+  private audienceChannel: string | null = null
+  setChannel(channel: string | null) {
+    this.audienceChannel = channel
+  }
+
+  /** A short two-tone chime for announcements (needs the context unlocked; silent otherwise). */
+  chime() {
+    const ctx = this.ctx
+    if (!ctx || ctx.state !== 'running') return
+    const t = ctx.currentTime
+    for (const [i, freq] of [880, 1318].entries()) {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      gain.gain.setValueAtTime(0, t + i * 0.22)
+      gain.gain.linearRampToValueAtTime(0.35, t + i * 0.22 + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.22 + 0.6)
+      osc.connect(gain).connect(ctx.destination)
+      osc.start(t + i * 0.22)
+      osc.stop(t + i * 0.22 + 0.65)
+    }
+  }
+
   /** Change which audience code this device plays for (the console's Stage window can switch). */
   setAudience(audienceId: string) {
     this.audienceId = audienceId
@@ -331,11 +356,11 @@ export class StageAudioEngine {
     this.active = active
     if (!this.ctx) return
     this.paused = pausedAt != null
-    const playing = Object.values(active).find((d) => isMediaCue(d.cue) && d.stopAt == null && cueTargets(d.cue, this.audienceId))
+    const playing = Object.values(active).find((d) => isMediaCue(d.cue) && d.stopAt == null && cueTargets(d.cue, this.audienceId, this.audienceChannel))
     setNowPlaying(playing?.cue.title ?? null)
 
     for (const inst of Object.values(active)) {
-      if (!isMediaCue(inst.cue) || !(inst.cue.targetUrl || inst.cue.studioId) || !cueTargets(inst.cue, this.audienceId)) continue
+      if (!isMediaCue(inst.cue) || !(inst.cue.targetUrl || inst.cue.studioId) || !cueTargets(inst.cue, this.audienceId, this.audienceChannel)) continue
       const hold = this.paused || inst.pausedAt != null
       const voice = this.voices.get(inst.instanceId)
       if (!voice) {
@@ -575,7 +600,7 @@ export class StageAudioEngine {
       (d) =>
         d.cue.duckOthers > 0 &&
         d.stopAt == null &&
-        cueTargets(d.cue, this.audienceId) &&
+        cueTargets(d.cue, this.audienceId, this.audienceChannel) &&
         now >= activeStartAt(d) &&
         now < activeEndAt(d),
     )

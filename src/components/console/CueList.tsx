@@ -5,6 +5,7 @@ import { formatTime } from '../../hooks/useServerNow'
 import { CUE_TYPE_GLYPHS, cueRunLength, instanceClock, type ActiveCue, type Cue } from '../../types/cue'
 import { numberBetween } from '../../utils/cueNumbering'
 import { instanceTiming } from '../../utils/cueTiming'
+import { TARGET_ALL, channelColor, channelLabel } from '../../types/channels'
 
 interface CueListProps {
   cues: Cue[]
@@ -19,6 +20,8 @@ interface CueListProps {
   checked: Set<string>
   onCheckedChange: (ids: Set<string>) => void
   onSelect: (cue: Cue) => void
+  /** The show has audience groups: rows show which groups each cue plays for. */
+  showChannels?: boolean
   /** Phone edit mode: a tap ticks the cue (for batch edit / delete) instead of selecting it. */
   selectMode?: boolean
   onStandby: (cue: Cue) => void
@@ -49,6 +52,7 @@ export function CueList({
   onCheckedChange,
   onSelect,
   selectMode,
+  showChannels,
   onStandby,
   onDelete,
   onStop,
@@ -136,6 +140,7 @@ export function CueList({
               dragging={draggingId === id}
               coarse={coarse}
               selectMode={!!selectMode}
+              showChannels={!!showChannels}
               paused={paused}
               onBeginDrag={() => beginDrag(id)}
               onRowClick={(e) => {
@@ -173,6 +178,7 @@ function CueRow({
   dragging,
   coarse,
   selectMode,
+  showChannels,
   paused,
   onBeginDrag,
   onRowClick,
@@ -192,6 +198,7 @@ function CueRow({
   dragging: boolean
   coarse: boolean
   selectMode: boolean
+  showChannels: boolean
   paused: boolean
   onBeginDrag: () => void
   onRowClick: (e: ReactMouseEvent) => void
@@ -416,6 +423,7 @@ function CueRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate font-medium text-white">{cue.title || '（未命名）'}</span>
+            {showChannels && <ChannelTags targets={cue.targetChannels} />}
             {cue.group && (
               <span className="shrink-0 rounded-full border border-white/15 px-2 py-px text-[10px] text-white/55">{cue.group}</span>
             )}
@@ -528,5 +536,22 @@ function CueFlags({ cue }: { cue: Cue }) {
         </span>
       ))}
     </div>
+  )
+}
+
+/** Which audience groups a cue plays for: nothing for "all", otherwise a small coloured badge per group. */
+function ChannelTags({ targets }: { targets: string[] }) {
+  const list = targets.filter((t) => t !== TARGET_ALL)
+  if (list.length === 0) return null
+  const shown = list.slice(0, 3)
+  return (
+    <span className="flex shrink-0 items-center gap-1" data-cue-channels>
+      {shown.map((id) => (
+        <span key={id} className="rounded px-1.5 py-px text-[10px] font-bold text-black" style={{ background: channelColor(id) }}>
+          {channelLabel(id)}
+        </span>
+      ))}
+      {list.length > shown.length && <span className="text-[10px] text-white/50">+{list.length - shown.length}</span>}
+    </span>
   )
 }

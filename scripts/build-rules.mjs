@@ -138,6 +138,14 @@ const rules = {
             '.write': or(isAdmin, and(memberAfter(4), unlocked), and('!data.exists()', 'newData.exists()')),
           },
         },
+        // Audience Web Push subscriptions (background announcements): a device writes only its own shaped
+        // record without signing in; project members read them (via the project's read rule) to push.
+        audiencePush: {
+          $aid: {
+            '.write': true,
+            '.validate': "newData.val() == null || (newData.hasChildren(['sub', 'channel', 'updatedAt']) && newData.child('sub/endpoint').isString() && newData.child('sub/endpoint').val().length < 800 && newData.child('channel').isString() && newData.child('channel').val().length < 20)",
+          },
+        },
         // DAW studios: members create / edit / delete them — except the only studio of a standalone
         // Studio project (that IS the project; admins remove it via the trash).
         studio: {

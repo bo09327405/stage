@@ -33,6 +33,7 @@ const clip = (v: unknown, n: number) => (typeof v === 'string' ? v.slice(0, n) :
  * subscriptions are read with the caller's own ID token, which only project members can do.
  */
 export async function pushRoute(req: Request, env: Env, url: URL): Promise<Response> {
+  if (url.pathname === '/api/push/announce' && req.method === 'POST') return announceRoute(req, env)
   if (url.pathname !== '/api/push/call' || req.method !== 'POST') return json(404, { error: 'not found' })
   const caller = callerFromHeaders(req.headers.get('authorization'), null)
   if (!caller.token || !caller.uid) return json(401, { error: 'sign_in_required' })
@@ -95,5 +96,59 @@ export async function pushRoute(req: Request, env: Env, url: URL): Promise<Respo
   await Promise.all(jobs)
   // Forget subscriptions the push service says are gone (same token, same rules).
   await Promise.all(dead.map((id) => fetch(`${db}/projects/${projectId}/intercom/push/${encodeURIComponent(id)}.json?${auth}`, { method: 'DELETE' }).catch(() => {})))
+  return json(200, { sent })
+}
+
+interface AudienceRecord {
+  sub?: PushSubscriptionJson
+  channel?: string
+  updatedAt?: number
+}
+
+/**
+ * POST /api/push/announce: an operator's announcement to the audience → Web Push to the audience devices
+ * that opted in (projects/{pid}/audiencePush/{code}), all of them for channel_all or just that group.
+ * Only project members can read the subscriptions, so only they can trigger this.
+ */
+async function announceRoute(req: Request, env: Env): Promise<Response> {
+  const caller = callerFromHeaders(req.headers.get('authorization'), null)
+  if (!caller.token || !caller.uid) return json(401, { error: 'sign_in_required' })
+  if (!env.VAPID_PUBLIC || !env.VAPID_PRIVATE_JWK) return json(200, { sent: 0, reason: 'push_not_configured' })
+  const body = (await req.json().catch(() => null)) as Record<string, unknown> | null
+  const projectId = clip(body?.projectId, 80)
+  if (!/^[\w-]{1,80}$/.test(projectId)) return json(400, { error: 'invalid_project' })
+  const last = recent.get(`a${caller.uid}`) ?? 0
+  if (Date.now() - last < 1500) return json(429, { error: 'too_fast' })
+  recent.set(`a${caller.uid}`, Date.now())
+
+  const db = env.DATABASE_URL.replace(/\/+$/, '')
+  const auth = `auth=${encodeURIComponent(caller.token)}`
+  const listRes = await fetch(`${db}/projects/${projectId}/audiencePush.json?${auth}`)
+  if (listRes.status === 401 || listRes.status === 403) return json(403, { error: 'not_a_member' })
+  if (!listRes.ok) return json(502, { error: 'database_unavailable' })
+  const devices = ((await listRes.json()) ?? {}) as Record<string, AudienceRecord>
+
+  const channel = clip(body?.channel, 20) || 'channel_all'
+  const text = clip(body?.text, 200)
+  const vapid: VapidKeys = { privateJwk: JSON.parse(env.VAPID_PRIVATE_JWK) as JsonWebKey, publicKey: env.VAPID_PUBLIC, subject: 'mailto:noreply@theatre-cue.invalid' }
+  const message = { type: 'announce', title: '📢 現場通知', body: text || '請看畫面', projectId, at: Date.now() }
+
+  let sent = 0
+  const dead: string[] = []
+  await Promise.all(
+    Object.entries(devices)
+      .filter(([, d]) => d?.sub?.endpoint?.startsWith('https://') && d.sub.keys?.p256dh && d.sub.keys?.auth && (channel === 'channel_all' || !d.channel || d.channel === channel))
+      .slice(0, 500)
+      .map(async ([id, d]) => {
+        try {
+          const r = await sendWebPush(d.sub!, message, vapid, { ttl: 60, urgent: true })
+          if (r.ok) sent++
+          else if (r.gone) dead.push(id)
+        } catch {
+          // One bad endpoint must not stop the others.
+        }
+      }),
+  )
+  await Promise.all(dead.map((id) => fetch(`${db}/projects/${projectId}/audiencePush/${encodeURIComponent(id)}.json?${auth}`, { method: 'DELETE' }).catch(() => {})))
   return json(200, { sent })
 }

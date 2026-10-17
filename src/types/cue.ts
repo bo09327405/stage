@@ -1,3 +1,5 @@
+import type { Announcement, ChannelConfig } from './channels'
+import { DEFAULT_CHANNELS, reachesChannel } from './channels'
 import type { FadeShape } from './studio'
 import type { ExecutorRun } from './sequence'
 import type { CueTrigger } from './trigger'
@@ -131,6 +133,8 @@ export interface Cue {
   targetMode: TargetMode
   /** Audience codes that receive this cue when targetMode is 'selected'. */
   targetIds: string[]
+  /** Audience channel groups this cue plays for: ['all'] (default) or channel_1 … channel_10. */
+  targetChannels: string[]
 
   // — External triggers —
   /** OSC / MIDI signals that GO this cue directly. */
@@ -172,6 +176,7 @@ export const DEFAULT_CUE: Omit<Cue, 'id'> = {
   preventGoDuration: 0,
   targetMode: 'all',
   targetIds: [],
+  targetChannels: ['all'],
   triggers: [],
   studioId: '',
 }
@@ -196,6 +201,8 @@ export function normalizeCue(raw: Omit<Partial<Cue>, 'stopOthers'> & LegacyCueFi
     stopOthers: stopOthers === true ? 'fade' : stopOthers === false || stopOthers == null ? 'none' : stopOthers,
     // RTDB drops empty arrays and may hand back arrays as objects.
     targetIds: Object.values(rest.targetIds ?? {}),
+    // RTDB drops empty arrays: a cue with no stored list is for every group.
+    targetChannels: (Object.values(rest.targetChannels ?? {}) as string[]).length ? (Object.values(rest.targetChannels ?? {}) as string[]) : ['all'],
     triggers: Object.values(rest.triggers ?? {}),
   }
 }
@@ -216,8 +223,8 @@ export const isMediaCue = (cue: Cue) => cue.type === 'AUDIO' || cue.type === 'VI
 export const isVisualCue = (cue: Cue) => cue.type !== 'AUDIO'
 
 /** Whether a cue is delivered to the given audience code. */
-export const cueTargets = (cue: Cue, audienceId: string) =>
-  cue.targetMode === 'all' || cue.targetIds.includes(audienceId)
+export const cueTargets = (cue: Cue, audienceId: string, channel: string | null = null) =>
+  (cue.targetMode === 'all' || cue.targetIds.includes(audienceId)) && reachesChannel(cue.targetChannels, channel)
 
 /** Length of one pass through the trimmed media, or Infinity if unknown. */
 export function segmentLength(cue: Cue): number {
@@ -344,6 +351,10 @@ export interface ShowState {
   executors: Record<string, ExecutorRun>
   /** Executor fader levels (0–1), multiplying their cues' volume. */
   execLevels: Record<string, number>
+  /** Audience grouping (Ch 1 … Ch 10); count 0 = everyone together. */
+  channels: ChannelConfig
+  /** The latest operator announcement to the audience. */
+  announce: Announcement | null
 }
 
 /** Show-wide effects: EQ (dB), low-pass cutoff (0–1, log 20 Hz–20 kHz; 1 = open), reverb / delay sends (0–1), pan (−1…1). */
@@ -383,6 +394,8 @@ export const INITIAL_SHOW_STATE: ShowState = {
   hitLevels: {},
   executors: {},
   execLevels: {},
+  channels: DEFAULT_CHANNELS,
+  announce: null,
 }
 
 export function playbackState(state: ShowState): PlaybackState {

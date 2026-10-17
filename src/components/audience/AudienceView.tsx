@@ -1,4 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useAudienceChannel } from '../../hooks/useAudienceChannel'
+import { audiencePushStatus, disableAudiencePush, enableAudiencePush, syncAudiencePush, type AudiencePushStatus } from '../../services/audiencePush'
+import { channelColor, channelLabel, reachesChannel, type Announcement } from '../../types/channels'
+import { GroupPicker } from './GroupPicker'
 import { useTheatreEngine } from '../../hooks/useTheatreEngine'
 import { stageAudio } from '../../services/audioEngine'
 import { useAnnouncePresence } from '../../services/presence'
@@ -35,7 +39,6 @@ export function AudienceView({ pinned }: { pinned: ShowRef | null }) {
   const live = useLivePointer()
   const show: ShowRef | null = pinned ?? (live ? { projectId: live.projectId, versionId: live.versionId } : null)
   const [audienceId] = useState(getAudienceId)
-  useAnnouncePresence(show, audienceId)
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-black text-white select-none">
@@ -54,7 +57,16 @@ export function AudienceView({ pinned }: { pinned: ShowRef | null }) {
 }
 
 function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) {
-  const { showState, connected, serverNow } = useTheatreEngine('audience', { basePath: versionPath(show) })
+  const { showState, connected, serverNow, loaded } = useTheatreEngine('audience', { basePath: versionPath(show) })
+  // Audience group (Ch 1 … Ch N): chosen on this device, valid for the current grouping only.
+  const grouping = useAudienceChannel(show.projectId, showState.channels)
+  const { channel } = grouping
+  useAnnouncePresence(show, audienceId, channel)
+  useEffect(() => stageAudio.setChannel(channel), [channel])
+  const [banner, setBanner] = useState<Announcement | null>(null)
+  const seenAnnounce = useRef<string | null | undefined>(undefined)
+  const [pushState, setPushState] = useState<AudiencePushStatus>(() => audiencePushStatus())
+  const [pushError, setPushError] = useState<string | null>(null)
   const [entered, setEntered] = useState(stageAudio.isUnlocked)
   const [blocked, setBlocked] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -70,7 +82,7 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
   // Feed every state change to the audio engine (it ignores everything until unlocked).
   useEffect(() => {
     stageAudio.sync(showState.active, showState.pausedAt)
-  }, [showState.active, showState.pausedAt, entered])
+  }, [showState.active, showState.pausedAt, entered, channel])
 
   useEffect(() => {
     stageAudio.setMaster(showState.masterVolume, showState.dim, showState.muted, showState.dimDb)
@@ -105,6 +117,36 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [entered])
 
+  // One-way announcements from the operator: chime, vibration, spoken text and an on-screen banner.
+  // The first snapshot is only a baseline, so an old announcement doesn't replay on every load.
+  useEffect(() => {
+    if (!loaded) return
+    const a = showState.announce
+    if (seenAnnounce.current === undefined) {
+      seenAnnounce.current = a?.id ?? null
+      return
+    }
+    if (!a || a.id === seenAnnounce.current) return
+    seenAnnounce.current = a.id
+    if (Date.now() - a.at > 30_000 || !reachesChannel([a.channel], channel)) return
+    setBanner(a)
+    if (a.tone) stageAudio.chime()
+    if (a.vibrate) navigator.vibrate?.([300, 120, 300, 120, 600])
+    if (a.speak && a.text && 'speechSynthesis' in window) {
+      const u = new SpeechSynthesisUtterance(a.text)
+      u.lang = 'zh-TW'
+      window.speechSynthesis.cancel()
+      window.speechSynthesis.speak(u)
+    }
+    const timer = window.setTimeout(() => setBanner((b) => (b?.id === a.id ? null : b)), 9000)
+    return () => window.clearTimeout(timer)
+  }, [showState.announce, loaded, channel])
+
+  // Keep the stored push subscription pointing at this device's current group.
+  useEffect(() => {
+    syncAudiencePush(show, audienceId, channel ?? 'channel_all').catch(() => {})
+  }, [show, audienceId, channel])
+
   const handleEnter = () => {
     // unlock() must run synchronously inside this tap for iOS to allow audio.
     stageAudio.unlock(serverNow, audienceId)
@@ -113,15 +155,44 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
     requestWakeLock()
   }
 
+  if (!loaded) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-white/50">
+        <span className="text-sm tracking-[0.4em]">THEATRE</span>
+        <span className="text-sm">連線中…</span>
+      </div>
+    )
+  }
+  // Grouped show and no valid group yet: pick one first (a ?group=N link only needs a confirming tap).
+  if (grouping.needsPick) {
+    return <GroupPicker count={showState.channels.count} linked={grouping.linked} onPick={grouping.choose} />
+  }
+
+  const groupBadge = channel && (
+    <span
+      className="pointer-events-auto flex items-center gap-2 rounded-full border-2 px-4 py-1.5 text-sm font-bold shadow-lg backdrop-blur"
+      style={{ borderColor: channelColor(channel), background: `${channelColor(channel)}26`, color: '#fff' }}
+      data-audience-group={channel}
+    >
+      📍 您已加入：{channelLabel(channel).replace('Ch ', '第 ')}{channel ? ' 組' : ''}
+      {showState.channels.open && (
+        <button type="button" onClick={grouping.forget} className="ml-1 rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-semibold">
+          換組
+        </button>
+      )}
+    </span>
+  )
+
   return (
     <>
       {entered ? (
-        <StageDisplay showState={showState} serverNow={serverNow} audienceId={audienceId} show={show} />
+        <StageDisplay showState={showState} serverNow={serverNow} audienceId={audienceId} audienceChannel={channel} show={show} />
       ) : (
         <button onClick={handleEnter} className="flex h-full w-full flex-col items-center justify-center gap-6">
           <span className="text-sm tracking-[0.4em] text-white/50">THEATRE</span>
           <span className="rounded-full border border-white/60 px-10 py-4 text-xl tracking-widest">進入演出</span>
           <span className="text-xs text-white/40">請開啟手機聲音（關閉靜音模式）</span>
+          {groupBadge}
           <AudienceCode code={audienceId} large />
         </button>
       )}
@@ -130,6 +201,61 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
         <div className="pointer-events-none absolute top-[max(0.75rem,env(safe-area-inset-top))] left-3">
           <AudienceCode code={audienceId} />
         </div>
+      )}
+      {entered && groupBadge && (
+        <div className="pointer-events-none absolute inset-x-0 top-[max(2.75rem,calc(env(safe-area-inset-top)+2rem))] flex justify-center px-3">{groupBadge}</div>
+      )}
+
+      {/* Connection light: green = live; amber = reconnecting (Firebase retries on its own) */}
+      {entered && (
+        <span
+          className={`pointer-events-none absolute top-[max(0.9rem,env(safe-area-inset-top))] right-12 flex items-center gap-1.5 text-[10px] ${connected ? 'text-go/80' : 'text-standby'}`}
+          data-audience-connection={connected ? 'online' : 'offline'}
+        >
+          <span className={`h-2 w-2 rounded-full ${connected ? 'bg-go' : 'animate-pulse bg-standby'}`} />
+          {connected ? '已連線' : '重新連線中…'}
+        </span>
+      )}
+
+      {/* Background alerts (notification + vibration while the page is hidden / phone locked) */}
+      {entered && (pushState === 'off' || pushState === 'on' || pushState === 'needs-install') && (
+        <div className="absolute inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-1 px-4">
+          {pushState === 'needs-install' ? (
+            <p className="max-w-xs rounded-lg bg-black/60 px-3 py-2 text-center text-[11px] leading-relaxed text-white/50">🔔 想在鎖屏時也收到震動通知：Safari「分享 → 加入主畫面」後，從主畫面開啟（iOS 16.4+）</p>
+          ) : (
+            <button
+              type="button"
+              onClick={async () => {
+                setPushError(null)
+                try {
+                  if (pushState === 'on') await disableAudiencePush(show, audienceId)
+                  else await enableAudiencePush(show, audienceId, channel ?? 'channel_all')
+                } catch (err) {
+                  setPushError((err as Error).message)
+                }
+                setPushState(audiencePushStatus())
+              }}
+              className={`min-h-11 rounded-full px-5 text-xs font-semibold ${pushState === 'on' ? 'bg-white/10 text-white/50' : 'bg-white/90 text-black'}`}
+              data-audience-push
+            >
+              {pushState === 'on' ? '🔔 背景通知已開啟' : '🔔 開啟背景通知與震動'}
+            </button>
+          )}
+          {pushError && <span className="text-[11px] text-red-400">{pushError}</span>}
+        </div>
+      )}
+
+      {/* Announcement from the operator */}
+      {banner && (
+        <button
+          type="button"
+          onClick={() => setBanner(null)}
+          className="absolute inset-x-3 top-[max(5rem,calc(env(safe-area-inset-top)+4rem))] z-20 rounded-2xl border border-white/30 bg-black/80 p-4 text-left shadow-2xl backdrop-blur-xl"
+          data-audience-announcement
+        >
+          <span className="text-[11px] font-bold tracking-widest text-standby">📢 現場通知</span>
+          <span className="mt-1 block text-lg font-semibold text-white">{banner.text || '請看畫面'}</span>
+        </button>
       )}
 
       {entered && blocked && (
@@ -152,7 +278,7 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
       )}
 
       {entered && !connected && (
-        <div className="absolute bottom-3 left-3 text-xs text-red-400/80">○ 連線中斷，重新連線中…</div>
+        <div className="absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-3 text-xs text-red-400/80">○ 連線中斷，重新連線中…</div>
       )}
     </>
   )

@@ -21,6 +21,8 @@ interface State {
   dim: boolean
   dimDb: number
   audience: string
+  /** Simulated audience group (channel_n); '' = not grouped (hears every cue). */
+  channel: string
   viewers: Viewer[]
 }
 
@@ -42,7 +44,7 @@ const readDim = () => {
   }
 }
 
-let state: State = { sound: readSound(), dim: readDim(), dimDb: readDimDb('monitor'), audience: '', viewers: [] }
+let state: State = { sound: readSound(), dim: readDim(), dimDb: readDimDb('monitor'), audience: '', channel: '', viewers: [] }
 let order = 0
 const listeners = new Set<() => void>()
 const set = (next: Partial<State>) => {
@@ -66,6 +68,9 @@ export const stageMonitor = {
   },
   setAudience(audience: string) {
     set({ audience })
+  },
+  setChannel(channel: string) {
+    set({ channel })
   },
   setDim(dim: boolean) {
     try {

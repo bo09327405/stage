@@ -4,6 +4,7 @@ import type { useTheatreEngine } from '../../hooks/useTheatreEngine'
 import { stageMonitor, useStageMonitor, useVideoOwner } from '../../services/stageMonitor'
 import { activeList, cueTargets, type Cue } from '../../types/cue'
 import type { ShowRef } from '../../types/project'
+import { channelIds, channelLabel } from '../../types/channels'
 import { StageDisplay } from '../audience/StageDisplay'
 import { DimButton } from '../ui/DimButton'
 
@@ -50,13 +51,14 @@ export function StageViewer({
   const mini = variant === 'mini'
   const { showState, serverNow } = engine
   const monitor = useStageMonitor()
-  const { audience } = monitor
+  const { audience, channel } = monitor
+  const groups = channelIds(showState.channels.count)
   const audio = useStageMonitorAudio(engine, show.projectId)
   // The window outranks buttons for the engine's live (audible) video element.
   const ownsVideo = useVideoOwner(mini ? 1 : 2)
 
   const codes = useMemo(() => [...new Set(cues.flatMap((c) => (c.targetMode === 'all' ? [] : (c.targetIds ?? []))))].sort(), [cues])
-  const live = activeList(showState).filter((a) => a.stopAt == null && cueTargets(a.cue, audience))
+  const live = activeList(showState).filter((a) => a.stopAt == null && cueTargets(a.cue, audience, channel || null))
   const sounding = live.filter((a) => a.cue.type === 'AUDIO' || a.cue.type === 'VIDEO')
   const newest = live[live.length - 1]
   const playback = engine.playbackState
@@ -122,6 +124,20 @@ export function StageViewer({
         {actions}
       </header>
 
+      {!mini && groups.length > 0 && (
+        <label className="flex items-center gap-2 border-b border-line px-4 py-1.5 text-[11px] text-white/45">
+          模擬組別
+          <select value={channel} onChange={(e) => stageMonitor.setChannel(e.target.value)} className="min-h-7 flex-1 rounded-md border border-white/10 bg-black/40 px-2 text-xs text-white" data-stage-channel>
+            <option value="">全部組別（所有 Cue）</option>
+            {groups.map((g) => (
+              <option key={g} value={g}>
+                {channelLabel(g)}（只播給此組的 Cue）
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
       {!mini && codes.length > 0 && (
         <label className="flex items-center gap-2 border-b border-line px-4 py-1.5 text-[11px] text-white/45">
           模擬
@@ -148,7 +164,7 @@ export function StageViewer({
             } ${showState.dim ? 'brightness-50' : ''} ${onScreenClick ? 'cursor-pointer' : ''}`}
             data-stage-screen
           >
-            <StageDisplay showState={showState} serverNow={serverNow} audienceId={audience} show={show} preview previewSound={ownsVideo && audio.playing} />
+            <StageDisplay showState={showState} serverNow={serverNow} audienceId={audience} audienceChannel={channel || null} show={show} preview previewSound={ownsVideo && audio.playing} />
             {audio.needsTap && (
               <button
                 type="button"
