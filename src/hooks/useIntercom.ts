@@ -13,9 +13,9 @@ import {
   update,
 } from 'firebase/database'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { intercomAudio, playCallBuzzer, unlockOnFirstGesture } from '../services/buzzer'
+import { intercomAudio, playCallBuzzer, primeRingtone, unlockOnFirstGesture } from '../services/buzzer'
 import { currentUser } from '../services/auth'
-import { deviceId, disableCallPush, enableCallPush, pushStatus, ringCallPush, syncCallPush, type PushStatus } from '../services/callPush'
+import { deviceId, disableCallPush, enableCallPush, pushStatus, ringCallPush, syncCallPush, testCallPush, type PushStatus } from '../services/callPush'
 import { db } from '../services/firebase'
 import { VoiceMesh } from '../services/voiceMesh'
 import { AudienceVoiceSender, type AudienceTarget } from '../services/audienceVoice'
@@ -36,7 +36,8 @@ import {
 
 const IDENTITY_KEY = 'theatre.intercomIdentity'
 const MESSAGE_HISTORY = 150
-const CALL_MAX_AGE_MS = 5000
+/** A call older than this (on the shared server clock) is not rung: e.g. one that ended while the page was frozen. */
+const CALL_MAX_AGE_MS = 20_000
 const CHANNEL_KEY = 'theatre.intercomChannel'
 const VOLUME_KEY = 'theatre.intercomVolume'
 const TARGETS_KEY = 'theatre.intercomGroupTargets'
@@ -209,7 +210,8 @@ export function useIntercom(projectId: string, groupCount = 0, versionBase = '')
       } catch {
         // Not remembered across reloads; harmless.
       }
-      intercomAudio() // this click unlocks the call buzzer
+      primeRingtone() // this click unlocks the call buzzer (context and ring element)
+      intercomAudio()
       identityRef.current = clean
       setIdentity(clean)
       await remove(ref(db, `${base}/signals/${MEMBER_ID}`)).catch(() => {})
@@ -298,6 +300,9 @@ export function useIntercom(projectId: string, groupCount = 0, versionBase = '')
 
   /* ---------- CALL ---------- */
 
+  // Phones' clocks drift: compare call times on the Firebase server clock, not the local one.
+  const serverOffset = useRef(0)
+  useEffect(() => onValue(ref(db, '.info/serverTimeOffset'), (s) => void (serverOffset.current = Number(s.val()) || 0)), [])
   const lastCallSeq = useRef<number | null>(null)
   const channelRef = useRef(channel)
   useEffect(() => {
@@ -313,7 +318,7 @@ export function useIntercom(projectId: string, groupCount = 0, versionBase = '')
         const seq = call?.seq ?? 0
         const isNew = seq !== lastCallSeq.current
         lastCallSeq.current = seq
-        if (!call || first || !isNew || Date.now() - call.at > CALL_MAX_AGE_MS) return
+        if (!call || first || !isNew || Date.now() + serverOffset.current - call.at > CALL_MAX_AGE_MS) return
         if (call.from === MEMBER_ID) return
         if (call.target !== '*' && call.target !== MEMBER_ID) return
         if (call.target === '*' && !channelsMeet(channelRef.current, call.channel)) return
@@ -339,8 +344,8 @@ export function useIntercom(projectId: string, groupCount = 0, versionBase = '')
         ...identity,
         target,
         channel,
-        // Client clock is fine here: it's only used to drop stale calls.
-        at: Date.now(),
+        // Server clock (client time + offset), so a phone with a wrong clock neither misses nor replays calls.
+        at: Date.now() + serverOffset.current,
       })
       // Phones with the app in the background hear it through Web Push.
       ringCallPush(projectId, { target, channel, name: identity.name, role: identity.role })
@@ -655,7 +660,7 @@ export function useIntercom(projectId: string, groupCount = 0, versionBase = '')
     markRead,
     call,
     /** Background CALL alerts (Web Push): works with the app in the background / phone locked. */
-    push: { status: pushState, enable: enablePush, disable: disablePush },
+    push: { status: pushState, enable: enablePush, disable: disablePush, test: () => testCallPush(projectId) },
     alert,
     dismissAlert: () => setAlert(null),
     voice: {

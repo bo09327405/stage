@@ -131,7 +131,7 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
     }
     if (!a || a.id === seenAnnounce.current) return
     seenAnnounce.current = a.id
-    if (Date.now() - a.at > 30_000 || !reachesChannel([a.channel], channel)) return
+    if (serverNow() - a.at > 30_000 || !reachesChannel([a.channel], channel)) return
     setBanner(a)
     if (a.tone) stageAudio.chime()
     if (a.vibrate) navigator.vibrate?.([300, 120, 300, 120, 600])
@@ -143,7 +143,7 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
     }
     const timer = window.setTimeout(() => setBanner((b) => (b?.id === a.id ? null : b)), 9000)
     return () => window.clearTimeout(timer)
-  }, [showState.announce, loaded, channel])
+  }, [showState.announce, loaded, channel, serverNow])
 
   // Keep the stored push subscription pointing at this device's current group.
   useEffect(() => {
@@ -153,6 +153,12 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
   const handleEnter = () => {
     // unlock() must run synchronously inside this tap for iOS to allow audio.
     stageAudio.unlock(serverNow, audienceId)
+    // Speech needs one utterance started inside a tap on iPhone before later announcements may speak.
+    try {
+      window.speechSynthesis?.speak(new SpeechSynthesisUtterance(''))
+    } catch {
+      // No speech support; announcements still chime and show.
+    }
     setEntered(true)
     enterFullscreen()
     requestWakeLock()

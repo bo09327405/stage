@@ -578,9 +578,10 @@ export function useTheatreEngine(role: EngineRole, { basePath, cues = [] }: Engi
     (message: Omit<Announcement, 'id' | 'at'>) => {
       assertConsole('announce')
       const id = push(ref(db, `${statePath}/announce`)).key!
-      return run(set(ref(db, `${statePath}/announce`), { ...message, id, at: Date.now() }))
+      // Server clock, so audience phones with a wrong clock still ring (and don't replay old ones).
+      return run(set(ref(db, `${statePath}/announce`), { ...message, id, at: serverNow() }))
     },
-    [assertConsole, run, statePath],
+    [assertConsole, run, serverNow, statePath],
   )
 
   const setHitsPage = useCallback(

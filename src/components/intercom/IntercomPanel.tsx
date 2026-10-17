@@ -423,6 +423,7 @@ function PushAlerts({ intercom }: { intercom: Intercom }) {
   const { push } = intercom
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
   if (push.status === 'unsupported') return null
 
   if (push.status === 'needs-install')
@@ -454,6 +455,29 @@ function PushAlerts({ intercom }: { intercom: Intercom }) {
       >
         {push.status === 'denied' ? '🔕 通知被封鎖（請到設定開啟）' : on ? '🔔 背景震動通知：已開啟（點一下關閉）' : '🔔 開啟背景震動通知'}
       </button>
+      {on && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true)
+            setError(null)
+            setNote(null)
+            try {
+              setNote(await push.test())
+            } catch (err) {
+              setError((err as Error).message)
+            } finally {
+              setBusy(false)
+            }
+          }}
+          className="min-h-10 w-full rounded-xl bg-white/[0.06] text-xs font-semibold text-white/70 disabled:opacity-50"
+          data-push-test
+        >
+          🧪 測試通知（送到這台，請先切到背景）
+        </button>
+      )}
+      {note && <p className="text-xs text-go">{note}</p>}
       {error && <p className="text-xs text-panic">{error}</p>}
     </div>
   )

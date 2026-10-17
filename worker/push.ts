@@ -61,20 +61,26 @@ export async function pushRoute(req: Request, env: Env, url: URL): Promise<Respo
   const name = clip(body?.name, 24) || 'Intercom'
   const role = clip(body?.role, 24)
   const direct = target !== '*'
+  // Test: push only to the caller's own device, to check the whole chain (subscription → push service → phone).
+  const test = body?.test === true
 
   const vapid: VapidKeys = { privateJwk: JSON.parse(env.VAPID_PRIVATE_JWK) as JsonWebKey, publicKey: env.VAPID_PUBLIC, subject: 'mailto:noreply@theatre-cue.invalid' }
   const message = {
     type: 'call',
-    title: direct ? `📞 ${name} 呼叫你` : `📞 ${name} 呼叫全體`,
-    body: role ? `${role} · 點開回到 Intercom` : '點開回到 Intercom',
+    test,
+    title: test ? '🔔 測試通知' : direct ? `📞 ${name} 呼叫你` : `📞 ${name} 呼叫全體`,
+    body: test ? '收到這則通知，表示背景震動通知已設定成功' : role ? `${role} · 點開回到 Intercom` : '點開回到 Intercom',
     projectId,
     at: Date.now(),
   }
 
   let sent = 0
   const dead: string[] = []
+  const statuses: number[] = []
+  const registered = test ? (devices[fromDevice]?.sub ? 1 : 0) : Object.keys(devices).length
   const jobs = Object.entries(devices)
     .filter(([id, d]) => {
+      if (test) return id === fromDevice && !!d?.sub?.endpoint
       if (!d?.sub?.endpoint || !d.sub.keys?.p256dh || !d.sub.keys?.auth || id === fromDevice) return false
       if (!d.sub.endpoint.startsWith('https://')) return false
       if (d.updatedAt && Date.now() - d.updatedAt > STALE_MS) {
@@ -87,6 +93,7 @@ export async function pushRoute(req: Request, env: Env, url: URL): Promise<Respo
     .map(async ([id, d]) => {
       try {
         const r = await sendWebPush(d.sub!, message, vapid, { ttl: 30, urgent: true })
+        statuses.push(r.status)
         if (r.ok) sent++
         else if (r.gone) dead.push(id)
       } catch {
@@ -96,7 +103,7 @@ export async function pushRoute(req: Request, env: Env, url: URL): Promise<Respo
   await Promise.all(jobs)
   // Forget subscriptions the push service says are gone (same token, same rules).
   await Promise.all(dead.map((id) => fetch(`${db}/projects/${projectId}/intercom/push/${encodeURIComponent(id)}.json?${auth}`, { method: 'DELETE' }).catch(() => {})))
-  return json(200, { sent })
+  return json(200, { sent, registered, statuses })
 }
 
 interface AudienceRecord {
