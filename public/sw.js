@@ -14,6 +14,20 @@ self.addEventListener('push', (event) => {
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
       // The app is on screen: it already rings and vibrates itself (live database listener).
       if (!data.test && windows.some((w) => w.visibilityState === 'visible')) return
+      if (data.type === 'vibe') {
+        // A vibration cue / Pre-Wait reminder: a short notification that buzzes with the cue's own rhythm.
+        await self.registration.showNotification(data.title || '📳 提示', {
+          body: data.body || '請看畫面',
+          tag: 'vibe',
+          renotify: true,
+          vibrate: Array.isArray(data.pattern) && data.pattern.length ? data.pattern : [500, 200, 500, 200, 500],
+          icon: 'favicon.svg',
+          badge: 'favicon.svg',
+          timestamp: data.at || Date.now(),
+          data: { projectId: data.projectId || '' },
+        })
+        return
+      }
       await self.registration.showNotification(data.title || '📞 Intercom 呼叫', {
         body: data.body || '點開回到 Intercom',
         tag: data.type === 'announce' ? 'announce' : 'intercom-call',

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAudienceChannel } from '../../hooks/useAudienceChannel'
+import { useVibrationCues } from '../../hooks/useVibrationCues'
 import { useAudienceVoice } from '../../services/audienceVoice'
 import { audiencePushStatus, disableAudiencePush, enableAudiencePush, syncAudiencePush, type AudiencePushStatus } from '../../services/audiencePush'
 import { channelColor, channelLabel, reachesChannel, type Announcement } from '../../types/channels'
@@ -65,6 +66,8 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
   useAnnouncePresence(show, audienceId, channel)
   useEffect(() => stageAudio.setChannel(channel), [channel])
   const [entered, setEntered] = useState(stageAudio.isUnlocked)
+  // Vibration cues and Pre-Wait reminders (motor on Android, Web Audio thumps on iPhone).
+  useVibrationCues(showState, serverNow, audienceId, channel, entered)
   // Live voice from the operator to this group (receive-only; needs the page's tap to be allowed to play).
   const voice = useAudienceVoice(versionPath(show), audienceId, entered)
   const [banner, setBanner] = useState<Announcement | null>(null)
@@ -150,7 +153,16 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
     syncAudiencePush(show, audienceId, channel ?? 'channel_all').catch(() => {})
   }, [show, audienceId, channel])
 
+  // Tap = the gesture browsers need: ask for notification permission (background vibration / announcements).
+  const askNotifications = (group: string | null) => {
+    if (audiencePushStatus() !== 'off') return
+    enableAudiencePush(show, audienceId, group ?? 'channel_all')
+      .catch(() => {})
+      .finally(() => setPushState(audiencePushStatus()))
+  }
+
   const handleEnter = () => {
+    askNotifications(channel)
     // unlock() must run synchronously inside this tap for iOS to allow audio.
     stageAudio.unlock(serverNow, audienceId)
     // Speech needs one utterance started inside a tap on iPhone before later announcements may speak.
@@ -179,7 +191,10 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
         count={showState.channels.count}
         linked={grouping.linked}
         current={grouping.switching ? channel : null}
-        onPick={grouping.choose}
+        onPick={(group) => {
+          askNotifications(group)
+          grouping.choose(group)
+        }}
         onCancel={grouping.switching ? grouping.cancelSwitch : undefined}
       />
     )

@@ -119,6 +119,11 @@ export class StageAudioEngine {
     return this.ctx !== null
   }
 
+  /** The engine's AudioContext (null until unlocked): used for the iPhone vibration stand-in. */
+  get context() {
+    return this.ctx
+  }
+
   /**
    * True once a media element has really been started inside a user gesture. iOS only lets an element play
    * later (when a cue fires) if it was primed like that; a context created outside a tap (pointerdown)

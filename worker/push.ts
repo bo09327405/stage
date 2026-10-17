@@ -36,6 +36,7 @@ const clip = (v: unknown, n: number) => (typeof v === 'string' ? v.slice(0, n) :
  */
 export async function pushRoute(req: Request, env: Env, url: URL): Promise<Response> {
   if (url.pathname === '/api/push/announce' && req.method === 'POST') return announceRoute(req, env)
+  if (url.pathname === '/api/push/vibrate' && req.method === 'POST') return vibrateRoute(req, env)
   if (url.pathname !== '/api/push/call' || req.method !== 'POST') return json(404, { error: 'not found' })
   const caller = callerFromHeaders(req.headers.get('authorization'), null)
   if (!caller.token || !caller.uid) return json(401, { error: 'sign_in_required' })
@@ -120,15 +121,52 @@ interface AudienceRecord {
  * Only project members can read the subscriptions, so only they can trigger this.
  */
 async function announceRoute(req: Request, env: Env): Promise<Response> {
+  return audienceRoute(req, env, 'a', (body, projectId) => {
+    const channel = clip(body.channel, 20) || 'channel_all'
+    const text = clip(body.text, 200)
+    return {
+      wants: (_id, d) => channel === 'channel_all' || !d.channel || d.channel === channel,
+      message: { type: 'announce', title: '📢 現場通知', body: text || '請看畫面', projectId, at: Date.now() },
+      ttl: 60,
+    }
+  })
+}
+
+/**
+ * POST /api/push/vibrate: a vibration cue (or a Pre-Wait reminder) fired on the console → Web Push to the audience
+ * devices it targets (its groups / audience codes), so phones with the app in the background still buzz: the service
+ * worker shows the notification with the cue's own vibration pattern.
+ */
+async function vibrateRoute(req: Request, env: Env): Promise<Response> {
+  return audienceRoute(req, env, 'v', (body, projectId) => {
+    const channels = (Array.isArray(body.channels) ? body.channels : []).map((c) => clip(c, 20)).filter(Boolean)
+    const everyone = channels.length === 0 || channels.includes('all') || channels.includes('channel_all')
+    const codes = Array.isArray(body.codes) ? new Set((body.codes as unknown[]).map((c) => clip(c, 20))) : null
+    const pattern = (Array.isArray(body.pattern) ? (body.pattern as unknown[]) : []).map((n) => Math.min(5000, Math.max(0, Math.round(Number(n) || 0)))).slice(0, 80)
+    return {
+      wants: (id, d) => (!codes || codes.has(id)) && (everyone || !d.channel || channels.includes(d.channel)),
+      message: { type: 'vibe', title: '📳 提示', body: clip(body.text, 120) || '請看畫面', pattern, projectId, at: Date.now() },
+      ttl: 20,
+    }
+  })
+}
+
+/** Shared by the audience pushes: auth, rate limit, read the project's subscriptions as the caller, send, tidy dead ones. */
+async function audienceRoute(
+  req: Request,
+  env: Env,
+  limitKey: string,
+  plan: (body: Record<string, unknown>, projectId: string) => { wants: (id: string, d: AudienceRecord) => boolean; message: unknown; ttl: number },
+): Promise<Response> {
   const caller = callerFromHeaders(req.headers.get('authorization'), null)
   if (!caller.token || !caller.uid) return json(401, { error: 'sign_in_required' })
   if (!env.VAPID_PUBLIC || !env.VAPID_PRIVATE_JWK) return json(200, { sent: 0, reason: 'push_not_configured' })
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null
   const projectId = clip(body?.projectId, 80)
-  if (!/^[\w-]{1,80}$/.test(projectId)) return json(400, { error: 'invalid_project' })
-  const last = recent.get(`a${caller.uid}`) ?? 0
-  if (Date.now() - last < 1500) return json(429, { error: 'too_fast' })
-  recent.set(`a${caller.uid}`, Date.now())
+  if (!body || !/^[\w-]{1,80}$/.test(projectId)) return json(400, { error: 'invalid_project' })
+  const last = recent.get(`${limitKey}${caller.uid}`) ?? 0
+  if (Date.now() - last < 300) return json(429, { error: 'too_fast' })
+  recent.set(`${limitKey}${caller.uid}`, Date.now())
 
   const db = env.DATABASE_URL.replace(/\/+$/, '')
   const auth = `auth=${encodeURIComponent(caller.token)}`
@@ -137,20 +175,17 @@ async function announceRoute(req: Request, env: Env): Promise<Response> {
   if (!listRes.ok) return json(502, { error: 'database_unavailable' })
   const devices = ((await listRes.json()) ?? {}) as Record<string, AudienceRecord>
 
-  const channel = clip(body?.channel, 20) || 'channel_all'
-  const text = clip(body?.text, 200)
+  const { wants, message, ttl } = plan(body, projectId)
   const vapid: VapidKeys = { privateJwk: JSON.parse(env.VAPID_PRIVATE_JWK) as JsonWebKey, publicKey: env.VAPID_PUBLIC, subject: VAPID_SUBJECT }
-  const message = { type: 'announce', title: '📢 現場通知', body: text || '請看畫面', projectId, at: Date.now() }
-
   let sent = 0
   const dead: string[] = []
   await Promise.all(
     Object.entries(devices)
-      .filter(([, d]) => d?.sub?.endpoint?.startsWith('https://') && d.sub.keys?.p256dh && d.sub.keys?.auth && (channel === 'channel_all' || !d.channel || d.channel === channel))
+      .filter(([id, d]) => d?.sub?.endpoint?.startsWith('https://') && d.sub.keys?.p256dh && d.sub.keys?.auth && wants(id, d))
       .slice(0, 500)
       .map(async ([id, d]) => {
         try {
-          const r = await sendWebPush(d.sub!, message, vapid, { ttl: 60, urgent: true })
+          const r = await sendWebPush(d.sub!, message, vapid, { ttl, urgent: true })
           if (r.ok) sent++
           else if (r.gone) dead.push(id)
         } catch {

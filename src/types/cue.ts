@@ -4,7 +4,7 @@ import type { FadeShape } from './studio'
 import type { ExecutorRun } from './sequence'
 import type { CueTrigger } from './trigger'
 
-export type CueType = 'AUDIO' | 'VIDEO' | 'IMAGE' | 'TEXT' | 'INTERACTIVE_UPLOAD' | 'BLACKOUT'
+export type CueType = 'AUDIO' | 'VIDEO' | 'IMAGE' | 'TEXT' | 'INTERACTIVE_UPLOAD' | 'BLACKOUT' | 'VIBRATION'
 
 export const CUE_TYPE_LABELS: Record<CueType, string> = {
   AUDIO: '音訊',
@@ -13,6 +13,7 @@ export const CUE_TYPE_LABELS: Record<CueType, string> = {
   TEXT: '文字',
   INTERACTIVE_UPLOAD: '互動上傳',
   BLACKOUT: '暗場',
+  VIBRATION: '震動提示',
 }
 
 /** Compact glyphs for list rows and type pickers. */
@@ -23,6 +24,7 @@ export const CUE_TYPE_GLYPHS: Record<CueType, string> = {
   TEXT: 'T',
   INTERACTIVE_UPLOAD: '⇪',
   BLACKOUT: '●',
+  VIBRATION: '📳',
 }
 
 export type UploadKind = 'photo' | 'audio' | 'both' | 'video' | 'any'
@@ -104,6 +106,17 @@ export interface Cue {
   fadeInTime: number
   /** Fade-in curve (same shapes as the Studio's region fades); linear when unset. */
   fadeInShape: FadeShape
+  // — Vibration (type VIBRATION; also the Pre-Wait reminder of any cue) —
+  /** How many pulses. */
+  vibrationCount: number
+  /** Length of one pulse, ms. */
+  vibrationDuration: number
+  /** Pause between pulses, ms. */
+  vibrationInterval: number
+  /** Buzz the audience's phones shortly before this cue's Pre-Wait ends (a "get ready" signal). */
+  preWaitVibrate: boolean
+  /** Seconds before Pre-Wait ends that the reminder fires (0 = at the very end). */
+  preWaitVibrateLead: number
 
   // — After this cue starts —
   followMode: FollowMode
@@ -165,6 +178,11 @@ export const DEFAULT_CUE: Omit<Cue, 'id'> = {
   duckOthers: 0,
   fadeInTime: 0,
   fadeInShape: 'linear',
+  vibrationCount: 3,
+  vibrationDuration: 500,
+  vibrationInterval: 200,
+  preWaitVibrate: false,
+  preWaitVibrateLead: 3,
   followMode: 'none',
   postWaitTime: 0,
   autoStopAfter: 0,
@@ -220,7 +238,11 @@ export interface Hit {
 
 export const isMediaCue = (cue: Cue) => cue.type === 'AUDIO' || cue.type === 'VIDEO'
 /** Cues that own the audience screen; a new one replaces the previous one for the same audience. */
-export const isVisualCue = (cue: Cue) => cue.type !== 'AUDIO'
+/** Total length of a vibration pattern in ms (pulses and the pauses between them). */
+export const vibrationLengthMs = (cue: Pick<Cue, 'vibrationCount' | 'vibrationDuration' | 'vibrationInterval'>) =>
+  Math.max(1, cue.vibrationCount) * cue.vibrationDuration + Math.max(0, cue.vibrationCount - 1) * cue.vibrationInterval
+
+export const isVisualCue = (cue: Cue) => cue.type !== 'AUDIO' && cue.type !== 'VIBRATION'
 
 /** Whether a cue is delivered to the given audience code. */
 export const cueTargets = (cue: Cue, audienceId: string, channel: string | null = null) =>
@@ -241,6 +263,9 @@ export function cueRunLength(cue: Cue): number {
   if (isMediaCue(cue)) {
     const segment = segmentLength(cue)
     length = cue.loop ? (cue.loopCount > 0 ? segment * cue.loopCount : Infinity) : segment
+  } else if (cue.type === 'VIBRATION') {
+    // A vibration cue lasts as long as its pulse pattern.
+    length = vibrationLengthMs(cue) / 1000
   } else {
     length = cue.duration > 0 ? cue.duration : Infinity
   }

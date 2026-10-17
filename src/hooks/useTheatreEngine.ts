@@ -2,6 +2,7 @@ import { increment, onValue, push, ref, runTransaction, serverTimestamp, set, up
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { db } from '../services/firebase'
 import { clampDimDb } from '../utils/dim'
+import { planVibrationPush } from '../services/vibrationPush'
 import { normalizeChannels, type Announcement, type ChannelConfig } from '../types/channels'
 import type { ExecutorRun, SeqCue } from '../types/sequence'
 import {
@@ -172,6 +173,14 @@ export function useTheatreEngine(role: EngineRole, { basePath, cues = [] }: Engi
   const fire = useCallback(
     (cue: Cue, next: Cue | null, at?: number) => {
       const instanceId = push(ref(db, `${statePath}/active`)).key!
+      // Phones with the app in the background get vibration cues / Pre-Wait reminders as Web Push.
+      const projectId = /^projects\/([^/]+)\//.exec(statePath)?.[1]
+      if (role === 'console' && projectId && (cue.type === 'VIBRATION' || (cue.preWaitVibrate && cue.preWaitTime > 0))) {
+        planVibrationPush(projectId, cue, at ?? serverNow(), serverNow, () => {
+          const now = stateRef.current.active[instanceId]
+          return !!now && now.stopAt == null && stateRef.current.pausedAt == null
+        })
+      }
       const updates: Record<string, unknown> = {
         [`active/${instanceId}`]: { instanceId, cue, firedAt: at ?? serverTimestamp() },
         standbyCue: next,
@@ -196,7 +205,7 @@ export function useTheatreEngine(role: EngineRole, { basePath, cues = [] }: Engi
       }
       return run(update(ref(db, statePath), updates))
     },
-    [run, serverNow, statePath],
+    [role, run, serverNow, statePath],
   )
 
   /**

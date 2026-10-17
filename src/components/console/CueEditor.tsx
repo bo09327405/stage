@@ -12,6 +12,7 @@ import {
   cueRunLength,
   isMediaCue,
   segmentLength,
+  vibrationLengthMs,
   type AudienceUpload,
   type Cue,
   type CueType,
@@ -29,6 +30,7 @@ import { TriggerMatchEditor } from '../ui/TriggerMatchEditor'
 import { AfterStartPanel } from './AfterStartPanel'
 import { AudienceTargeting } from './AudienceTargeting'
 import { ChannelTargets } from './ChannelTargets'
+import { HapticEditor } from './HapticEditor'
 import { InboxPickerModal } from './InboxPickerModal'
 import { StudioBinding } from './StudioBinding'
 import { WaveformTrimmer } from './WaveformTrimmer'
@@ -66,7 +68,7 @@ function stableStringify(value: unknown): string {
 }
 type TabId = 'basic' | 'media' | 'start' | 'after' | 'target' | 'triggers'
 
-const TYPES: CueType[] = ['AUDIO', 'VIDEO', 'IMAGE', 'TEXT', 'INTERACTIVE_UPLOAD', 'BLACKOUT']
+const TYPES: CueType[] = ['AUDIO', 'VIDEO', 'IMAGE', 'TEXT', 'INTERACTIVE_UPLOAD', 'BLACKOUT', 'VIBRATION']
 const UPLOAD_ACCEPT: Partial<Record<CueType, string>> = {
   AUDIO: 'audio/*',
   VIDEO: 'video/*',
@@ -441,6 +443,17 @@ export function CueEditor({
                   <img src={draft.targetUrl} alt="" className="max-h-48 w-full rounded-lg bg-black object-contain" />
                 )}
               </>
+            ) : draft.type === 'VIBRATION' ? (
+              <HapticEditor
+                value={draft}
+                onChange={(changes) =>
+                  setDraft((d) => {
+                    const next = { ...d, ...changes }
+                    // The cue lasts as long as its pattern.
+                    return { ...next, duration: Math.round(vibrationLengthMs(next)) / 1000 }
+                  })
+                }
+              />
             ) : (
               <p className="rounded-lg bg-white/[0.03] p-4 text-sm text-white/40">
                 「{CUE_TYPE_LABELS[draft.type]}」類型不需要媒體檔案。
@@ -517,6 +530,37 @@ export function CueEditor({
               value={draft.preWaitTime}
               onChange={(v) => set('preWaitTime', v)}
             />
+            {draft.preWaitTime > 0 && (
+              <div className="space-y-3 rounded-xl border border-line bg-white/[0.03] p-3" data-prewait-vibrate>
+                <button
+                  type="button"
+                  onClick={() => set('preWaitVibrate', !draft.preWaitVibrate)}
+                  aria-pressed={draft.preWaitVibrate}
+                  className={`flex min-h-12 w-full items-center justify-between rounded-xl border px-3 text-left text-sm font-semibold ${draft.preWaitVibrate ? 'border-standby bg-standby/15 text-standby' : 'border-line text-white/60'}`}
+                  data-prewait-vibrate-toggle
+                >
+                  <span>⚡ Pre-Wait 結束前震動提醒</span>
+                  <span className="text-xs">{draft.preWaitVibrate ? '已開啟' : '關閉'}</span>
+                </button>
+                {draft.preWaitVibrate && (
+                  <>
+                    <NumberField
+                      label="提前提醒"
+                      hint="在 Pre-Wait 結束前幾秒震動（0 = 結束的瞬間）"
+                      value={draft.preWaitVibrateLead}
+                      max={draft.preWaitTime}
+                      onChange={(v) => set('preWaitVibrateLead', Math.min(v, draft.preWaitTime))}
+                    />
+                    {draft.type !== 'VIBRATION' && (
+                      <HapticEditor
+                        value={draft}
+                        onChange={(changes) => setDraft((d) => ({ ...d, ...changes }))}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
+            )}
             <div>
               <Label>Stop Others</Label>
               <Segmented<StopOthersMode>
