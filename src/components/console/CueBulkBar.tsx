@@ -4,6 +4,7 @@ import { FOLLOW_MODE_LABELS, STOP_OTHERS_LABELS, type Cue, type FollowMode, type
 import { renumber } from '../../utils/cueNumbering'
 import { Label, NumberField, Segmented, fieldClass } from '../ui/controls'
 import { AudienceTargeting } from './AudienceTargeting'
+import { ChannelTargets } from './ChannelTargets'
 
 interface CueBulkBarProps {
   cues: Cue[]
@@ -13,6 +14,8 @@ interface CueBulkBarProps {
   updateCues: (ids: string[], changes: Partial<Omit<Cue, 'id'>>) => Promise<void>
   removeCues: (ids: string[]) => Promise<void>
   setCueNumbers: (numbers: Record<string, number>) => Promise<void>
+  /** Audience channel groups of this show (0 = not grouped): enables the channel row in batch edit. */
+  channelCount?: number
   /**
    * Phone layout: instead of the bar over the list, a bar pinned to the bottom of the screen. It starts
    * as one "編輯" button; in edit mode a tap on a cue ticks it, and the bar offers batch edit / delete.
@@ -21,7 +24,7 @@ interface CueBulkBarProps {
 }
 
 /** Toolbar over the cue list while cues are multi-selected: select all / clear / edit / renumber / delete. */
-export function CueBulkBar({ cues, checked, onCheckedChange, onlineAudience, updateCues, removeCues, setCueNumbers, bottom }: CueBulkBarProps) {
+export function CueBulkBar({ cues, checked, onCheckedChange, onlineAudience, updateCues, removeCues, setCueNumbers, channelCount = 0, bottom }: CueBulkBarProps) {
   const [dialog, setDialog] = useState<'edit' | 'renumber' | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -156,6 +159,7 @@ export function CueBulkBar({ cues, checked, onCheckedChange, onlineAudience, upd
           sample={cues.find((c) => c.id === ids[0])}
           groups={[...new Set(cues.map((c) => c.group).filter(Boolean))]}
           onlineAudience={onlineAudience}
+          channelCount={channelCount}
           onClose={() => setDialog(null)}
           onApply={async (changes) => {
             if (await run(() => updateCues(ids, changes))) setDialog(null)
@@ -199,8 +203,8 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   )
 }
 
-type BulkFields = Pick<Cue, 'fadeInTime' | 'fadeOutTime' | 'volume' | 'preWaitTime' | 'followMode' | 'stopOthers' | 'group' | 'targetMode' | 'targetIds'>
-type FieldKey = 'fadeInTime' | 'fadeOutTime' | 'volume' | 'preWaitTime' | 'followMode' | 'stopOthers' | 'group' | 'target'
+type BulkFields = Pick<Cue, 'fadeInTime' | 'fadeOutTime' | 'volume' | 'preWaitTime' | 'followMode' | 'stopOthers' | 'group' | 'targetMode' | 'targetIds' | 'targetChannels'>
+type FieldKey = 'fadeInTime' | 'fadeOutTime' | 'volume' | 'preWaitTime' | 'followMode' | 'stopOthers' | 'group' | 'target' | 'channels'
 
 /** Each field has an "apply" box; only ticked fields are written to every selected cue. */
 function BulkEditDialog({
@@ -208,6 +212,7 @@ function BulkEditDialog({
   sample,
   groups,
   onlineAudience,
+  channelCount,
   onClose,
   onApply,
 }: {
@@ -215,6 +220,7 @@ function BulkEditDialog({
   sample: Cue | undefined
   groups: string[]
   onlineAudience: string[]
+  channelCount: number
   onClose: () => void
   onApply: (changes: Partial<BulkFields>) => Promise<void>
 }) {
@@ -228,6 +234,7 @@ function BulkEditDialog({
     group: sample?.group ?? '',
     targetMode: sample?.targetMode ?? 'all',
     targetIds: sample?.targetIds ?? [],
+    targetChannels: sample?.targetChannels ?? ['all'],
   })
   const [on, setOn] = useState<Set<FieldKey>>(new Set())
   const [busy, setBusy] = useState(false)
@@ -246,7 +253,9 @@ function BulkEditDialog({
 
   const changes: Partial<BulkFields> = {}
   for (const f of on) {
-    if (f === 'target') {
+    if (f === 'channels') {
+      changes.targetChannels = values.targetChannels
+    } else if (f === 'target') {
       changes.targetMode = values.targetMode
       changes.targetIds = values.targetMode === 'all' ? [] : values.targetIds
     } else {
@@ -345,6 +354,17 @@ function BulkEditDialog({
             </>
           ),
         })}
+        {channelCount > 0 &&
+          Row({
+            field: 'channels',
+            children: (
+              <ChannelTargets
+                count={channelCount}
+                value={values.targetChannels}
+                onChange={(targets) => set('targetChannels', targets, 'channels')}
+              />
+            ),
+          })}
         {Row({
           field: 'target',
           children: (

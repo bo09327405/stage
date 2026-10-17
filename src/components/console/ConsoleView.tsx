@@ -719,6 +719,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
               updateCues={updateCues}
               removeCues={removeCues}
               setCueNumbers={setCueNumbers}
+              channelCount={channelCount}
               bottom={compact ? { editing: selectMode, onEditingChange: setSelectMode } : undefined}
             />
             <div className={`min-h-[240px] flex-1 ${compact ? 'flex' : 'overflow-y-auto'}`}>
