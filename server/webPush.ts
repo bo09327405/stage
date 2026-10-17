@@ -80,6 +80,8 @@ export interface PushResult {
   status: number
   /** The subscription is gone (unsubscribed / expired): delete it. */
   gone: boolean
+  /** The push service's own reason when it refused (first part of its response), for diagnosis. */
+  detail?: string
 }
 
 /** Sends one push message. `urgent`: wake a sleeping phone now (a CALL is time-critical, so a short TTL too). */
@@ -96,5 +98,6 @@ export async function sendWebPush(sub: PushSubscriptionJson, message: unknown, v
     },
     body,
   })
-  return { ok: res.ok, status: res.status, gone: res.status === 404 || res.status === 410 }
+  const detail = res.ok ? undefined : (await res.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 140)
+  return { ok: res.ok, status: res.status, gone: res.status === 404 || res.status === 410, detail }
 }

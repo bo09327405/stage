@@ -119,10 +119,10 @@ export async function testCallPush(projectId: string): Promise<string> {
     body: JSON.stringify({ projectId, fromDevice: deviceId(), target: '*', channel: 'all', name: 'Intercom', role: '', test: true }),
   })
   if (!res.ok) throw new Error(res.status === 401 ? '請先登入' : res.status === 403 ? '你不是此專案成員' : `推播伺服器回應 ${res.status}`)
-  const r = (await res.json()) as { sent?: number; registered?: number; statuses?: number[]; reason?: string }
+  const r = (await res.json()) as { sent?: number; registered?: number; statuses?: string[]; reason?: string }
   if (r.reason === 'push_not_configured') throw new Error('伺服器尚未設定推播金鑰')
   if (!r.registered) throw new Error('這台裝置還沒有登記推播訂閱：請先關閉再重新開啟「背景震動通知」')
-  if (!r.sent) throw new Error(`推播服務拒絕了這則通知（HTTP ${(r.statuses ?? []).join(', ') || '無回應'}）：請關閉再重新開啟背景震動通知`)
+  if (!r.sent) throw new Error(`推播服務拒絕了這則通知（${(r.statuses ?? []).join('；') || '無回應'}）：請關閉再重新開啟背景震動通知`)
   return '已送出測試通知：把 App 切到背景或鎖屏，幾秒內應該會收到'
 }
 

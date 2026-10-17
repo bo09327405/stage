@@ -19,6 +19,8 @@ interface DeviceRecord {
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
 
+/** Contact claim for the push services. Apple rejects (403) a subject that isn't a real https: / mailto: address. */
+const VAPID_SUBJECT = 'https://bo09327405.github.io/stage/'
 const MAX_DEVICES = 60
 const STALE_MS = 45 * 24 * 3600 * 1000
 const recent = new Map<string, number>()
@@ -64,7 +66,7 @@ export async function pushRoute(req: Request, env: Env, url: URL): Promise<Respo
   // Test: push only to the caller's own device, to check the whole chain (subscription → push service → phone).
   const test = body?.test === true
 
-  const vapid: VapidKeys = { privateJwk: JSON.parse(env.VAPID_PRIVATE_JWK) as JsonWebKey, publicKey: env.VAPID_PUBLIC, subject: 'mailto:noreply@theatre-cue.invalid' }
+  const vapid: VapidKeys = { privateJwk: JSON.parse(env.VAPID_PRIVATE_JWK) as JsonWebKey, publicKey: env.VAPID_PUBLIC, subject: VAPID_SUBJECT }
   const message = {
     type: 'call',
     test,
@@ -76,7 +78,7 @@ export async function pushRoute(req: Request, env: Env, url: URL): Promise<Respo
 
   let sent = 0
   const dead: string[] = []
-  const statuses: number[] = []
+  const statuses: string[] = []
   const registered = test ? (devices[fromDevice]?.sub ? 1 : 0) : Object.keys(devices).length
   const jobs = Object.entries(devices)
     .filter(([id, d]) => {
@@ -93,7 +95,7 @@ export async function pushRoute(req: Request, env: Env, url: URL): Promise<Respo
     .map(async ([id, d]) => {
       try {
         const r = await sendWebPush(d.sub!, message, vapid, { ttl: 30, urgent: true })
-        statuses.push(r.status)
+        statuses.push(`${r.status}${r.detail ? ' ' + r.detail : ''}`)
         if (r.ok) sent++
         else if (r.gone) dead.push(id)
       } catch {
@@ -137,7 +139,7 @@ async function announceRoute(req: Request, env: Env): Promise<Response> {
 
   const channel = clip(body?.channel, 20) || 'channel_all'
   const text = clip(body?.text, 200)
-  const vapid: VapidKeys = { privateJwk: JSON.parse(env.VAPID_PRIVATE_JWK) as JsonWebKey, publicKey: env.VAPID_PUBLIC, subject: 'mailto:noreply@theatre-cue.invalid' }
+  const vapid: VapidKeys = { privateJwk: JSON.parse(env.VAPID_PRIVATE_JWK) as JsonWebKey, publicKey: env.VAPID_PUBLIC, subject: VAPID_SUBJECT }
   const message = { type: 'announce', title: '📢 現場通知', body: text || '請看畫面', projectId, at: Date.now() }
 
   let sent = 0
