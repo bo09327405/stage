@@ -1,11 +1,16 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { channelId, channelIds, type ChannelConfig } from '../types/channels'
 
 const key = (projectId: string) => `theatre.audienceChannel.${projectId}`
 
+/** Even while switching is locked, a device may correct a wrong pick this long after choosing. */
+const GRACE_MS = 10 * 60 * 1000
+
 interface Stored {
   channel: string
   epoch: number
+  /** When it was chosen (ms), for the correction grace period. */
+  at?: number
 }
 
 function read(projectId: string): Stored | null {
@@ -32,6 +37,9 @@ export function groupFromUrl(): string | null {
  */
 export function useAudienceChannel(projectId: string, config: ChannelConfig) {
   const [stored, setStored] = useState<Stored | null>(() => read(projectId))
+  // The user tapped "change group": show the full list again (also when the link named a group).
+  const [switching, setSwitching] = useState(false)
+  const [, setTick] = useState(0)
   const valid = config.count > 0 && !!stored && stored.epoch === config.epoch && channelIds(config.count).includes(stored.channel)
   const channel = config.count > 0 && valid ? stored!.channel : null
   // The link's group, if it fits this show's grouping.
@@ -40,25 +48,39 @@ export function useAudienceChannel(projectId: string, config: ChannelConfig) {
 
   const choose = useCallback(
     (next: string) => {
-      const value = { channel: next, epoch: config.epoch }
+      const value = { channel: next, epoch: config.epoch, at: Date.now() }
       try {
         localStorage.setItem(key(projectId), JSON.stringify(value))
       } catch {
         // Not remembered across reloads; harmless.
       }
       setStored(value)
+      setSwitching(false)
     },
     [projectId, config.epoch],
   )
-  /** Back to the group picker (only offered while the operator has unlocked switching). */
-  const forget = useCallback(() => {
-    try {
-      localStorage.removeItem(key(projectId))
-    } catch {
-      // Harmless.
-    }
-    setStored(null)
-  }, [projectId])
+  // Switching is open when the operator unlocked it, and always for a few minutes after choosing, so a
+  // wrong tap can be corrected.
+  const graceLeft = valid && stored?.at ? stored.at + GRACE_MS - Date.now() : 0
+  const canSwitch = valid && (config.open || graceLeft > 0)
+  useEffect(() => {
+    if (config.open || graceLeft <= 0) return
+    const timer = window.setTimeout(() => setTick((t) => t + 1), graceLeft + 50)
+    return () => window.clearTimeout(timer)
+  }, [config.open, graceLeft])
 
-  return { channel, needsPick: config.count > 0 && !valid, linked, choose, forget }
+  const startSwitch = useCallback(() => setSwitching(true), [])
+  const cancelSwitch = useCallback(() => setSwitching(false), [])
+
+  return {
+    channel,
+    needsPick: config.count > 0 && (!valid || switching),
+    /** The picker is open to change an existing choice (offers "keep my group"). */
+    switching: valid && switching,
+    canSwitch,
+    linked: switching ? null : linked,
+    choose,
+    startSwitch,
+    cancelSwitch,
+  }
 }

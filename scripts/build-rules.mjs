@@ -124,6 +124,21 @@ const rules = {
             // run playback even in a read-only project.
             showState: { '.read': true, '.write': member },
             triggerHost: { '.write': member },
+            // Live voice from the operator to the audience of a group (WebRTC signaling, per audience device):
+            // only members offer, the device answers, both exchange ICE candidates. Short, shaped strings only.
+            voice: {
+              $aid: {
+                offer: { '.read': true, '.write': member, '.validate': "newData.val() == null || (newData.hasChildren(['sdp', 'at']) && newData.child('sdp').isString() && newData.child('sdp').val().length < 12000)" },
+                answer: { '.read': member, '.write': true, '.validate': "newData.val() == null || (newData.hasChildren(['sdp']) && newData.child('sdp').isString() && newData.child('sdp').val().length < 12000)" },
+                ice: {
+                  $k: {
+                    '.read': true,
+                    '.write': true,
+                    '.validate': "newData.val() == null || (newData.hasChildren(['from', 'candidate']) && newData.child('candidate').isString() && newData.child('candidate').val().length < 2000)",
+                  },
+                },
+              },
+            },
             presence: {
               $aid: {
                 '.write': true,

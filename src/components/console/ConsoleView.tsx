@@ -40,6 +40,7 @@ import { executeShowAction } from '../../utils/showActions'
 import { useIntercom } from '../../hooks/useIntercom'
 import { useAudienceStudios } from '../../hooks/useAudienceStudios'
 import { CallFlash, IntercomButton, IntercomPanel } from '../intercom/IntercomPanel'
+import { AudienceTalkGate } from '../intercom/AudienceTalkGate'
 import { IntercomContext } from '../intercom/intercomContext'
 import { ActivityDot } from '../triggers/ActivityDot'
 import { GlobalTriggersPanel } from '../triggers/GlobalTriggersPanel'
@@ -168,7 +169,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
       // Not remembered; harmless.
     }
   }
-  const intercom = useIntercom(show.projectId, showState.channels.count)
+  const intercom = useIntercom(show.projectId, showState.channels.count, versionPath(show))
   const [consoleDimDb, setConsoleDimDb] = useDimDb('console')
   // Auto-save the show (cue lists, hits, script, surfaces, triggers, media) to R2 after each pause in
   // editing: theatre/setcue-projects/{pid}.json. Playback state isn't watched, so running the show
@@ -574,6 +575,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
         />
         <AnimatePresence>{intercomOpen && <IntercomPanel intercom={intercom} onClose={() => setIntercomOpen(false)} />}</AnimatePresence>
         <CallFlash intercom={intercom} />
+        <AudienceTalkGate intercom={intercom} />
 
         <AnimatePresence>
           {triggersOpen && <GlobalTriggersPanel projectId={show.projectId} router={router} onClose={() => setTriggersOpen(false)} />}

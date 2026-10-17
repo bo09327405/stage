@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAudienceChannel } from '../../hooks/useAudienceChannel'
+import { useAudienceVoice } from '../../services/audienceVoice'
 import { audiencePushStatus, disableAudiencePush, enableAudiencePush, syncAudiencePush, type AudiencePushStatus } from '../../services/audiencePush'
 import { channelColor, channelLabel, reachesChannel, type Announcement } from '../../types/channels'
 import { GroupPicker } from './GroupPicker'
@@ -63,11 +64,13 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
   const { channel } = grouping
   useAnnouncePresence(show, audienceId, channel)
   useEffect(() => stageAudio.setChannel(channel), [channel])
+  const [entered, setEntered] = useState(stageAudio.isUnlocked)
+  // Live voice from the operator to this group (receive-only; needs the page's tap to be allowed to play).
+  const voice = useAudienceVoice(versionPath(show), audienceId, entered)
   const [banner, setBanner] = useState<Announcement | null>(null)
   const seenAnnounce = useRef<string | null | undefined>(undefined)
   const [pushState, setPushState] = useState<AudiencePushStatus>(() => audiencePushStatus())
   const [pushError, setPushError] = useState<string | null>(null)
-  const [entered, setEntered] = useState(stageAudio.isUnlocked)
   const [blocked, setBlocked] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
@@ -165,7 +168,15 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
   }
   // Grouped show and no valid group yet: pick one first (a ?group=N link only needs a confirming tap).
   if (grouping.needsPick) {
-    return <GroupPicker count={showState.channels.count} linked={grouping.linked} onPick={grouping.choose} />
+    return (
+      <GroupPicker
+        count={showState.channels.count}
+        linked={grouping.linked}
+        current={grouping.switching ? channel : null}
+        onPick={grouping.choose}
+        onCancel={grouping.switching ? grouping.cancelSwitch : undefined}
+      />
+    )
   }
 
   const groupBadge = channel && (
@@ -175,8 +186,11 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
       data-audience-group={channel}
     >
       📍 您已加入：{channelLabel(channel).replace('Ch ', '第 ')}{channel ? ' 組' : ''}
-      {showState.channels.open && (
-        <button type="button" onClick={grouping.forget} className="ml-1 rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-semibold">
+      {grouping.canSwitch && (
+        <button type="button" onClick={(e) => {
+            e.stopPropagation()
+            grouping.startSwitch()
+          }} className="ml-1 min-h-8 rounded-full bg-white/25 px-3 text-xs font-semibold" data-audience-switch>
           換組
         </button>
       )}
@@ -188,13 +202,13 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
       {entered ? (
         <StageDisplay showState={showState} serverNow={serverNow} audienceId={audienceId} audienceChannel={channel} show={show} />
       ) : (
-        <button onClick={handleEnter} className="flex h-full w-full flex-col items-center justify-center gap-6">
+        <div role="button" tabIndex={0} onClick={handleEnter} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleEnter()} className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-6">
           <span className="text-sm tracking-[0.4em] text-white/50">THEATRE</span>
           <span className="rounded-full border border-white/60 px-10 py-4 text-xl tracking-widest">進入演出</span>
           <span className="text-xs text-white/40">請開啟手機聲音（關閉靜音模式）</span>
           {groupBadge}
           <AudienceCode code={audienceId} large />
-        </button>
+        </div>
       )}
 
       {entered && (
@@ -214,6 +228,12 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
         >
           <span className={`h-2 w-2 rounded-full ${connected ? 'bg-go' : 'animate-pulse bg-standby'}`} />
           {connected ? '已連線' : '重新連線中…'}
+        </span>
+      )}
+
+      {entered && voice.connected && (
+        <span className="pointer-events-none absolute inset-x-0 bottom-[max(4.5rem,calc(env(safe-area-inset-bottom)+3.5rem))] mx-auto w-fit rounded-full bg-black/60 px-3 py-1 text-[11px] text-white/60 backdrop-blur" data-audience-voice="connected">
+          🎙 現場語音已連線（只收聽）
         </span>
       )}
 

@@ -17,7 +17,7 @@ export const roleColor = (role: IntercomRole) => INTERCOM_ROLES.find((r) => r.id
 export type MicMode = 'open' | 'ptt'
 
 /** Party-line channels. "all" (All Call) talks to and hears every channel. */
-export type IntercomChannel = 'A' | 'B' | 'all' | `channel_${number}`
+export type IntercomChannel = 'A' | 'B' | 'all' | 'channel_all' | `channel_${number}`
 
 export const INTERCOM_CHANNELS: { id: IntercomChannel; label: string }[] = [
   { id: 'A', label: 'Ch A' },
@@ -28,7 +28,26 @@ export const INTERCOM_CHANNELS: { id: IntercomChannel; label: string }[] = [
 /** A party-line channel that follows one of the show's audience groups (crew working a group together). */
 export const isGroupChannel = (c: string | undefined): c is `channel_${number}` => /^channel_\d+$/.test(c ?? '')
 
-/** The crew's selectable channels: Ch A / Ch B / All Call, plus one per audience group (Ch 1 … Ch N). */
+/** The dropdown channels: Ch 1 … Ch N, or "All Channels" (every group). Unlike All Call (crew only), these can be aimed at the audience. */
+export const isGroupLike = (c: string | undefined) => isGroupChannel(c) || c === 'channel_all'
+
+/** Crew-only channels: they never reach the audience. */
+export const CREW_CHANNELS = INTERCOM_CHANNELS
+
+/** Who a group channel (Ch 1 … Ch 10) talks to: other crew on it, or the audience devices of that group. */
+export type IntercomTarget = 'crew' | 'audience'
+export const INTERCOM_TARGETS: { id: IntercomTarget; label: string; short: string }[] = [
+  { id: 'crew', label: '👥 演出人員', short: '演出人員' },
+  { id: 'audience', label: '📣 觀眾', short: '觀眾' },
+]
+
+/** The group channels Ch 1 … Ch N (audience groups of the show). */
+export const groupChannelOptions = (groupCount: number): { id: IntercomChannel; label: string }[] =>
+  groupCount > 0
+    ? [{ id: 'channel_all', label: 'All Channels' }, ...Array.from({ length: groupCount }, (_, i) => ({ id: `channel_${i + 1}` as IntercomChannel, label: `Ch ${i + 1}` }))]
+    : []
+
+/** All selectable channels: Ch A / Ch B / All Call, plus one per audience group (Ch 1 … Ch N). */
 export const intercomChannelOptions = (groupCount: number): { id: IntercomChannel; label: string }[] => [
   ...INTERCOM_CHANNELS.slice(0, 2),
   ...Array.from({ length: groupCount }, (_, i) => ({ id: `channel_${i + 1}` as IntercomChannel, label: `Ch ${i + 1}` })),
@@ -36,11 +55,19 @@ export const intercomChannelOptions = (groupCount: number): { id: IntercomChanne
 ]
 
 /** Short label for any channel id. */
-export const intercomChannelLabel = (c: string | undefined) => (isGroupChannel(c) ? `Ch ${c.replace('channel_', '')}` : c === 'A' || c === 'B' ? `Ch ${c}` : 'All Call')
+export const intercomChannelLabel = (c: string | undefined) =>
+  c === 'channel_all' ? 'All Channels' : isGroupChannel(c) ? `Ch ${c.replace('channel_', '')}` : c === 'A' || c === 'B' ? `Ch ${c}` : 'All Call'
 
 /** Whether stations on these two channels hear each other. Older stations (no channel) are on All. */
 export const channelsMeet = (a: IntercomChannel | undefined, b: IntercomChannel | undefined) =>
-  !a || !b || a === 'all' || b === 'all' || a === b
+  !a ||
+  !b ||
+  a === 'all' ||
+  b === 'all' ||
+  a === b ||
+  // "All Channels" reaches every group channel (not the crew-only A / B).
+  (a === 'channel_all' && isGroupChannel(b)) ||
+  (b === 'channel_all' && isGroupChannel(a))
 
 /** One connected station, at projects/{pid}/intercom/members/{memberId}. Removed on disconnect. */
 export interface IntercomMember {
@@ -55,6 +82,8 @@ export interface IntercomMember {
   micMode: MicMode
   /** Party-line channel; missing on stations from before channels existed (treated as All). */
   channel?: IntercomChannel
+  /** On a group channel: speaking to other crew (default) or to the audience of that group. */
+  target?: IntercomTarget
 }
 
 export interface ChatMessage {

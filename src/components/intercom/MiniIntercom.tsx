@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../../services/auth'
-import { intercomChannelLabel, intercomChannelOptions, roleColor, type IntercomChannel } from '../../types/intercom'
+import { CREW_CHANNELS, INTERCOM_TARGETS, groupChannelOptions, intercomChannelLabel, isGroupLike, roleColor, type IntercomChannel } from '../../types/intercom'
 import type { SurfaceWidget } from '../../types/surface'
 import { IntercomChat } from './IntercomChat'
 import { useIntercomContext, type Intercom } from './intercomContext'
@@ -18,33 +18,85 @@ function Lamp({ label, on, color, blink, id }: { label: string; on: boolean; col
   )
 }
 
-/** Ch A / Ch B / All Call selector, shared with the Intercom drawer. */
+/**
+ * Channel selector, shared with the Intercom drawer. Crew-only channels (Ch A / Ch B / All Call) are buttons;
+ * the show's audience-group channels (Ch 1 … Ch N) are one dropdown. On a group channel you choose who you
+ * talk to — the other crew on it, or the audience of that group — and the audience choice is flagged in orange.
+ */
 export function ChannelPicker({ intercom, small }: { intercom: Intercom; small?: boolean }) {
+  const crew = CREW_CHANNELS
+  const groups = groupChannelOptions(intercom.groupCount)
+  const onGroup = isGroupLike(intercom.channel)
+  const pick = (id: IntercomChannel) => {
+    if (intercom.channel !== id) navigator.vibrate?.(10)
+    intercom.setChannel(id)
+  }
   return (
-    <div
-      className={`rounded-lg bg-black/40 p-0.5 ${intercom.groupCount > 0 ? 'flex gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden' : 'grid grid-cols-3 gap-1'}`}
-      role="radiogroup"
-      aria-label="Intercom 頻道"
-      data-intercom-channels
-    >
-      {intercomChannelOptions(intercom.groupCount).map((c) => (
-        <button
-          key={c.id}
-          type="button"
-          role="radio"
-          aria-checked={intercom.channel === c.id}
-          onClick={() => {
-            if (intercom.channel !== c.id) navigator.vibrate?.(10)
-            intercom.setChannel(c.id)
-          }}
-          className={`${intercom.groupCount > 0 ? 'shrink-0 px-3 ' : ''}rounded-md font-bold ${small ? 'min-h-7 text-[10px]' : 'min-h-9 text-xs'} ${
-            intercom.channel === c.id ? (c.id === 'all' ? 'bg-standby text-black' : 'bg-accent text-white') : 'text-white/50 hover:text-white/80'
-          }`}
-          data-intercom-channel={c.id}
-        >
-          {c.label}
-        </button>
-      ))}
+    <div className="space-y-1.5" data-intercom-channels>
+      <div className="grid grid-cols-3 gap-1 rounded-lg bg-black/40 p-0.5" role="radiogroup" aria-label="演出人員頻道">
+        {crew.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            role="radio"
+            aria-checked={intercom.channel === c.id}
+            onClick={() => pick(c.id)}
+            className={`rounded-md font-bold ${small ? 'min-h-7 text-[10px]' : 'min-h-9 text-xs'} ${
+              intercom.channel === c.id ? (c.id === 'all' ? 'bg-standby text-black' : 'bg-accent text-white') : 'text-white/50 hover:text-white/80'
+            }`}
+            data-intercom-channel={c.id}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+      <p className={`px-0.5 text-white/35 ${small ? 'text-[9px]' : 'text-[10px]'}`} data-all-call-note>
+        Ch A / Ch B / All Call 只供演出人員，不會傳到觀眾。要對觀眾說話，請從下方「分組頻道」選擇。
+      </p>
+      {groups.length > 0 && (
+        <>
+          <select
+            value={onGroup ? intercom.channel : ''}
+            onChange={(e) => e.target.value && pick(e.target.value as IntercomChannel)}
+            aria-label="分組頻道 Ch 1–10"
+            className={`w-full rounded-lg border bg-black/40 px-2 font-semibold ${small ? 'min-h-7 text-[10px]' : 'min-h-10 text-xs'} ${
+              onGroup ? (intercom.target === 'audience' ? 'border-standby text-standby' : 'border-accent text-white') : 'border-white/10 text-white/55'
+            }`}
+            data-intercom-group-select
+          >
+            <option value="">分組頻道（可對觀眾）· All Channels / Ch 1 – {intercom.groupCount}</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.label} · {intercom.targetOf(g.id) === 'audience' ? '對觀眾' : '演出人員'}
+              </option>
+            ))}
+          </select>
+          {onGroup && (
+            <div className="grid grid-cols-2 gap-1 rounded-lg bg-black/40 p-0.5" role="radiogroup" aria-label="發話對象" data-intercom-target>
+              {INTERCOM_TARGETS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={intercom.target === t.id}
+                  onClick={() => intercom.setGroupTarget(intercom.channel, t.id)}
+                  className={`rounded-md font-bold ${small ? 'min-h-7 text-[10px]' : 'min-h-9 text-xs'} ${
+                    intercom.target === t.id ? (t.id === 'audience' ? 'bg-standby text-black' : 'bg-accent text-white') : 'text-white/50 hover:text-white/80'
+                  }`}
+                  data-intercom-target-option={t.id}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {onGroup && intercom.target === 'audience' && (
+            <p className={`rounded-md bg-standby/10 px-2 py-1 text-standby ${small ? 'text-[9px]' : 'text-[11px]'}`} data-intercom-audience-note>
+              📣 發話會傳給{intercom.channel === 'channel_all' ? '「全部組別」' : ` ${intercomChannelLabel(intercom.channel)} `}的觀眾（{intercom.audienceReach}/{intercom.audienceInGroup} 台已連線）
+            </p>
+          )}
+        </>
+      )}
     </div>
   )
 }

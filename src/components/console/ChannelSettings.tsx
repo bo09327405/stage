@@ -65,7 +65,7 @@ export function ChannelSettings({
       detail: next ? (
         <>{people}解鎖後，觀眾可以在自己的手機上隨時更換組別，這會改變他們收到的 Cue 與廣播。</>
       ) : (
-        <>{people}鎖定後觀眾無法自行換組；要換組只能由你「重設」。</>
+        <>{people}鎖定後，觀眾只能在選擇組別後的 10 分鐘內自行更正選錯的組別；超過後要換組只能由你「重設」。</>
       ),
       confirmLabel: next ? '確認解鎖 (Unlock)' : '確認鎖定 (Lock)',
     })

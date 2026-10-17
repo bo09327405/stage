@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { intercomChannelLabel, isGroupChannel, roleColor, type ChatMessage, type IntercomChannel } from '../../types/intercom'
+import { intercomChannelLabel, isGroupLike, roleColor, type ChatMessage, type IntercomChannel } from '../../types/intercom'
 import { Avatar } from '../hub/Hub'
 import type { Intercom } from './intercomContext'
 
@@ -8,7 +8,7 @@ const QUICK_REPLIES = ['收到 Copy', '稍等 Hold', 'Standby 中', '可以 GO',
 const FOLLOW_SLACK = 48
 
 const channelTag = (c: IntercomChannel | undefined) => intercomChannelLabel(c)
-const channelClass = (c: IntercomChannel | undefined) => (isGroupChannel(c) ? 'bg-go/20 text-go' : c === 'A' ? 'bg-accent/25 text-[#64a8ff]' : c === 'B' ? 'bg-[#bf5af2]/20 text-[#d29bf5]' : 'bg-standby/20 text-standby')
+const channelClass = (c: IntercomChannel | undefined) => (isGroupLike(c) ? 'bg-go/20 text-go' : c === 'A' ? 'bg-accent/25 text-[#64a8ff]' : c === 'B' ? 'bg-[#bf5af2]/20 text-[#d29bf5]' : 'bg-standby/20 text-standby')
 const time = (at: number) => (at ? new Date(at).toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '…')
 
 /**

@@ -12,6 +12,7 @@ import { HistoryControls } from '../ui/HistoryControls'
 import { FullscreenButton } from '../ui/FullscreenButton'
 import { CurrentUserChip } from '../hub/Hub'
 import { CallFlash, IntercomButton, IntercomPanel } from '../intercom/IntercomPanel'
+import { AudienceTalkGate } from '../intercom/AudienceTalkGate'
 import { IntercomContext } from '../intercom/intercomContext'
 import { ActivityDot } from '../triggers/ActivityDot'
 import { GlobalTriggersPanel } from '../triggers/GlobalTriggersPanel'
@@ -33,7 +34,7 @@ export function SurfaceView({ show, projectName, versionName, initialSurfaceId, 
   const { hits } = useHits(basePath)
   const engine = useTheatreEngine('console', { basePath, cues })
   const router = useTriggerRouter({ show, basePath, label: `控制面板 · ${projectName}`, engine, cues, hits })
-  const intercom = useIntercom(show.projectId, engine.showState.channels.count)
+  const intercom = useIntercom(show.projectId, engine.showState.channels.count, basePath)
   const [intercomOpen, setIntercomOpen] = useState(false)
   const [triggersOpen, setTriggersOpen] = useState(false)
   const [backNote, setBackNote] = useState(false)
@@ -108,6 +109,7 @@ export function SurfaceView({ show, projectName, versionName, initialSurfaceId, 
       />
       <AnimatePresence>{intercomOpen && <IntercomPanel intercom={intercom} onClose={() => setIntercomOpen(false)} />}</AnimatePresence>
       <CallFlash intercom={intercom} />
+      <AudienceTalkGate intercom={intercom} />
       {backNote && (
         <div className="fixed top-16 left-3 z-[95] flex items-center gap-3 rounded-xl border border-white/15 bg-black/85 px-4 py-2.5 text-xs text-white shadow-2xl backdrop-blur" role="status" data-back-note>
           已切換到 Set Cue 分頁

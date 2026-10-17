@@ -18,12 +18,15 @@ import { currentUser } from '../services/auth'
 import { deviceId, disableCallPush, enableCallPush, pushStatus, ringCallPush, syncCallPush, type PushStatus } from '../services/callPush'
 import { db } from '../services/firebase'
 import { VoiceMesh } from '../services/voiceMesh'
+import { AudienceVoiceSender, type AudienceTarget } from '../services/audienceVoice'
 import {
   channelsMeet,
   intercomPath,
   type ChatMessage,
   isGroupChannel,
+  isGroupLike,
   type IntercomChannel,
+  type IntercomTarget,
   type IntercomCall,
   type IntercomMember,
   type IntercomRole,
@@ -36,6 +39,10 @@ const MESSAGE_HISTORY = 150
 const CALL_MAX_AGE_MS = 5000
 const CHANNEL_KEY = 'theatre.intercomChannel'
 const VOLUME_KEY = 'theatre.intercomVolume'
+const TARGETS_KEY = 'theatre.intercomGroupTargets'
+const SNOOZE_KEY = 'theatre.audienceTalkSnooze'
+/** "Don't warn me again" for talking to the audience lasts this long. */
+const SNOOZE_MS = 30 * 60 * 1000
 
 function loadPref<T>(key: string, parse: (raw: string) => T | null, fallback: T): T {
   try {
@@ -80,7 +87,7 @@ export interface ActiveCallAlert {
  * Production intercom for a project: presence, text chat, CALL buzzer and WebRTC voice.
  * Mount once per page (it keeps running while the panel is closed).
  */
-export function useIntercom(projectId: string, groupCount = 0) {
+export function useIntercom(projectId: string, groupCount = 0, versionBase = '') {
   const base = intercomPath(projectId)
   const [identity, setIdentity] = useState<IntercomIdentity | null>(loadIdentity)
   // Latest identity for callbacks that run right after join(), before a re-render.
@@ -91,14 +98,14 @@ export function useIntercom(projectId: string, groupCount = 0) {
   const [alert, setAlert] = useState<ActiveCallAlert | null>(null)
   const [readUpTo, setReadUpTo] = useState(0)
   const [channel, setChannelState] = useState<IntercomChannel>(() =>
-    loadPref<IntercomChannel>(CHANNEL_KEY, (r) => (r === 'A' || r === 'B' || r === 'all' || isGroupChannel(r) ? (r as IntercomChannel) : null), 'all'),
+    loadPref<IntercomChannel>(CHANNEL_KEY, (r) => (r === 'A' || r === 'B' || r === 'all' || isGroupLike(r) ? (r as IntercomChannel) : null), 'all'),
   )
   const [listenVolume, setListenVolumeState] = useState(() =>
     loadPref(VOLUME_KEY, (r) => (Number.isFinite(Number(r)) ? Math.max(0, Math.min(1, Number(r))) : null), 1),
   )
   // The show was regrouped to fewer groups than this station's channel: fall back to All Call.
   useEffect(() => {
-    if (isGroupChannel(channel) && Number(channel.replace('channel_', '')) > groupCount) {
+    if ((isGroupChannel(channel) && Number(channel.replace('channel_', '')) > groupCount) || (channel === 'channel_all' && groupCount === 0)) {
       setChannelState('all')
       savePref(CHANNEL_KEY, 'all')
     }
@@ -127,8 +134,68 @@ export function useIntercom(projectId: string, groupCount = 0) {
   const localAnalyser = useRef<AnalyserNode | null>(null)
 
   const memberRef = ref(db, `${base}/members/${MEMBER_ID}`)
+
+  /* ---------- group channels: crew or audience ---------- */
+
+  // On a group channel (Ch 1 … Ch 10) this station talks either to other crew on it or to the audience of
+  // that group. Crew channels (A / B / All) never reach the audience.
+  const [groupTargets, setGroupTargets] = useState<Record<string, IntercomTarget>>(() =>
+    loadPref<Record<string, IntercomTarget>>(TARGETS_KEY, (r) => (JSON.parse(r) as Record<string, IntercomTarget>) ?? null, {}),
+  )
+  const target: IntercomTarget = isGroupLike(channel) ? (groupTargets[channel] ?? 'crew') : 'crew'
+  const setGroupTarget = useCallback((c: IntercomChannel, t: IntercomTarget) => {
+    setGroupTargets((prev) => {
+      const next = { ...prev, [c]: t }
+      savePref(TARGETS_KEY, JSON.stringify(next))
+      return next
+    })
+  }, [])
+  const audienceTalk = target === 'audience' && !!versionBase
+
+  // Warning before the first words to the audience: confirm once per channel, or "don't ask for 30 min".
+  const [snoozeUntil, setSnoozeUntil] = useState(() => loadPref(SNOOZE_KEY, (r) => Number(r) || 0, 0))
+  const [okChannel, setOkChannel] = useState<string | null>(null)
+  const [askOpen, setAskOpen] = useState(false)
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const left = snoozeUntil - Date.now()
+    if (left <= 0) return
+    const timer = window.setTimeout(() => setTick((t) => t + 1), left + 50)
+    return () => window.clearTimeout(timer)
+  }, [snoozeUntil])
+  const audienceOk = audienceTalk && (okChannel === channel || snoozeUntil > Date.now())
+
   // Holding TALK (on screen or the T key) opens the mic in either mode; open mode also has a latch.
-  const micLive = voiceOn && hasMic && (pttHeld || (micMode === 'open' && !muted))
+  // Talking to the audience additionally needs the confirmation above.
+  const micLive = voiceOn && hasMic && (pttHeld || (micMode === 'open' && !muted)) && (!audienceTalk || audienceOk)
+  useEffect(() => {
+    // Keyed without confirmation: don't open the mic, ask first.
+    if (audienceTalk && !audienceOk && (pttHeld || (voiceOn && micMode === 'open' && !muted))) {
+      setPttHeld(false)
+      setMuted(true)
+      setAskOpen(true)
+    }
+  }, [audienceTalk, audienceOk, pttHeld, voiceOn, micMode, muted])
+  const talkGate = {
+    open: askOpen && audienceTalk && !audienceOk,
+    channel,
+    snoozeMinutes: SNOOZE_MS / 60000,
+    confirm: (snooze: boolean) => {
+      setOkChannel(channel)
+      if (snooze) {
+        const until = Date.now() + SNOOZE_MS
+        setSnoozeUntil(until)
+        savePref(SNOOZE_KEY, String(until))
+      }
+      setAskOpen(false)
+    },
+    /** "Fix the target": switch this channel back to crew. */
+    fixTarget: () => {
+      setGroupTarget(channel, 'crew')
+      setAskOpen(false)
+    },
+    cancel: () => setAskOpen(false),
+  }
 
   /* ---------- presence ---------- */
 
@@ -165,17 +232,17 @@ export function useIntercom(projectId: string, groupCount = 0) {
   }, [identity, join])
 
   // A network blip fires onDisconnect (removing us); put the station back once reconnected.
-  const presence = useRef({ identity, voiceOn: false, muted: true, micMode: 'ptt' as MicMode, channel })
+  const presence = useRef({ identity, voiceOn: false, muted: true, micMode: 'ptt' as MicMode, channel, target: 'crew' as IntercomTarget })
   useEffect(() => {
     if (!joined) return
     let wasConnected = true
     return onValue(ref(db, '.info/connected'), (snapshot) => {
       const connected = snapshot.val() === true
       if (connected && !wasConnected && presence.current.identity) {
-        const { identity: who, voiceOn: v, muted: m, micMode: mode, channel: ch } = presence.current
+        const { identity: who, voiceOn: v, muted: m, micMode: mode, channel: ch, target: tg } = presence.current
         onDisconnect(memberRef)
           .remove()
-          .then(() => set(memberRef, { ...who, joinedAt: serverTimestamp(), voice: v, muted: m, micMode: mode, channel: ch }))
+          .then(() => set(memberRef, { ...who, joinedAt: serverTimestamp(), voice: v, muted: m, micMode: mode, channel: ch, target: tg }))
           .catch(() => {})
       }
       wasConnected = connected
@@ -395,18 +462,22 @@ export function useIntercom(projectId: string, groupCount = 0) {
 
   // Mic state → tracks and the member record.
   useEffect(() => {
-    presence.current = { identity, voiceOn, muted: !micLive, micMode, channel }
+    presence.current = { identity, voiceOn, muted: !micLive, micMode, channel, target }
     meshRef.current?.setMicEnabled(micLive)
-    if (joined) update(memberRef, { voice: voiceOn, muted: !micLive, micMode, channel }).catch(() => {})
+    if (joined) update(memberRef, { voice: voiceOn, muted: !micLive, micMode, channel, target }).catch(() => {})
     // memberRef is stable for this tab.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [micLive, voiceOn, micMode, joined, identity, channel])
+  }, [micLive, voiceOn, micMode, joined, identity, channel, target])
 
   // Channel gating and listen level: each remote voice plays only if our channels meet.
-  const memberChannels = members.map((m) => `${m.id}:${m.channel ?? ''}`).join(',')
+  const memberChannels = members.map((m) => `${m.id}:${m.channel ?? ''}:${m.target ?? ''}`).join(',')
   const audible = useMemo(() => {
-    const of = new Map(memberChannels.split(',').map((e) => e.split(':') as [string, string]))
-    return (peerId: string) => channelsMeet(channel, (of.get(peerId) || undefined) as IntercomChannel | undefined)
+    const of = new Map(memberChannels.split(',').map((e) => e.split(':') as [string, string, string]).map(([id, ch, tg]) => [id, { ch, tg }] as const))
+    // A station talking to the audience isn't talking to crew: its voice is muted for everyone else here.
+    return (peerId: string) => {
+      const peer = of.get(peerId)
+      return channelsMeet(channel, (peer?.ch || undefined) as IntercomChannel | undefined) && peer?.tg !== 'audience'
+    }
   }, [channel, memberChannels])
   const applyListen = useCallback(() => {
     for (const [id, { el }] of remoteAudio.current) {
@@ -485,6 +556,43 @@ export function useIntercom(projectId: string, groupCount = 0) {
     return () => clearInterval(timer)
   }, [voiceOn, micLive])
 
+  /* ---------- live voice to the audience of a group ---------- */
+
+  const [audiencePresence, setAudiencePresence] = useState<AudienceTarget[]>([])
+  const [audienceReach, setAudienceReach] = useState(0)
+  const senderRef = useRef<AudienceVoiceSender | null>(null)
+  // Who is in this group right now (audience devices announce themselves with their group).
+  useEffect(() => {
+    if (!audienceTalk || !isGroupLike(channel)) {
+      setAudiencePresence([])
+      return
+    }
+    return onValue(ref(db, `${versionBase}/presence`), (snapshot) => {
+      const raw = (snapshot.val() ?? {}) as Record<string, { joinedAt?: number; channel?: string }>
+      setAudiencePresence(
+        Object.entries(raw)
+          .filter(([, v]) => !!v && (channel === 'channel_all' ? !!v.channel : v.channel === channel))
+          .map(([audienceId, v]) => ({ audienceId, joinedAt: Number(v.joinedAt) || 0 })),
+      )
+    })
+  }, [audienceTalk, channel, versionBase])
+  // Keep a connection to each of them while armed; the mic track only opens on TALK (micLive).
+  useEffect(() => {
+    if (!(audienceTalk && voiceOn && hasMic)) {
+      setAudienceReach(0)
+      return
+    }
+    const sender = new AudienceVoiceSender(versionBase, MEMBER_ID, () => meshRef.current?.stream ?? null, setAudienceReach)
+    senderRef.current = sender
+    return () => {
+      sender.stop()
+      if (senderRef.current === sender) senderRef.current = null
+    }
+  }, [audienceTalk, voiceOn, hasMic, versionBase, channel])
+  useEffect(() => {
+    senderRef.current?.sync(audiencePresence)
+  }, [audiencePresence, audienceTalk, voiceOn, hasMic, channel])
+
   /* ---------- leave ---------- */
 
   const leave = useCallback(async () => {
@@ -519,6 +627,17 @@ export function useIntercom(projectId: string, groupCount = 0) {
     /** Number of audience groups of the show: Ch 1 … Ch N are offered as extra channels. */
     groupCount,
     channel,
+    /** On a group channel: who this station talks to (crew or the audience of that group). */
+    target,
+    /** The target set for any group channel (crew by default). */
+    targetOf: (c: IntercomChannel): IntercomTarget => groupTargets[c] ?? 'crew',
+    setGroupTarget,
+    /** Audience devices currently connected to this station's live voice. */
+    audienceReach,
+    /** Devices in the group that could be reached. */
+    audienceInGroup: audiencePresence.length,
+    /** Warning dialog state for talking to the audience (see AudienceTalkGate). */
+    talkGate,
     setChannel,
     listenVolume,
     setListenVolume,

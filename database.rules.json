@@ -38,6 +38,27 @@
             "triggerHost": {
               ".write": "(auth != null && (root.child('projectIndex').child($pid).child('owner/uid').val() == auth.uid || root.child('projectIndex').child($pid).child('collaborators').child(auth.uid).exists()))"
             },
+            "voice": {
+              "$aid": {
+                "offer": {
+                  ".read": true,
+                  ".write": "(auth != null && (root.child('projectIndex').child($pid).child('owner/uid').val() == auth.uid || root.child('projectIndex').child($pid).child('collaborators').child(auth.uid).exists()))",
+                  ".validate": "newData.val() == null || (newData.hasChildren(['sdp', 'at']) && newData.child('sdp').isString() && newData.child('sdp').val().length < 12000)"
+                },
+                "answer": {
+                  ".read": "(auth != null && (root.child('projectIndex').child($pid).child('owner/uid').val() == auth.uid || root.child('projectIndex').child($pid).child('collaborators').child(auth.uid).exists()))",
+                  ".write": true,
+                  ".validate": "newData.val() == null || (newData.hasChildren(['sdp']) && newData.child('sdp').isString() && newData.child('sdp').val().length < 12000)"
+                },
+                "ice": {
+                  "$k": {
+                    ".read": true,
+                    ".write": true,
+                    ".validate": "newData.val() == null || (newData.hasChildren(['from', 'candidate']) && newData.child('candidate').isString() && newData.child('candidate').val().length < 2000)"
+                  }
+                }
+              }
+            },
             "presence": {
               "$aid": {
                 ".write": true,
