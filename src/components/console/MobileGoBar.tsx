@@ -8,6 +8,7 @@ import { formatTime } from '../../hooks/useServerNow'
  */
 export function MobileGoBar({
   title,
+  clearTopInset,
   playbackState,
   standbyCue,
   firstCue,
@@ -20,6 +21,8 @@ export function MobileGoBar({
   onAdd,
 }: {
   title: string
+  /** The bar sits at the very top of the screen (page header folded): keep clear of the notch / Dynamic Island. */
+  clearTopInset?: boolean
   playbackState: PlaybackState
   standbyCue: Cue | null
   firstCue: Cue | null
@@ -40,7 +43,8 @@ export function MobileGoBar({
 
   return (
     <div
-      className="sticky top-0 z-30 border-b border-line bg-[#161618]/95 px-3 pt-1.5 pb-3 backdrop-blur-xl"
+      className="sticky top-0 z-30 border-b border-line bg-[#161618]/95 px-3 pb-3 backdrop-blur-xl"
+      style={{ paddingTop: clearTopInset ? 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' : '0.375rem' }}
       data-mobile-gobar
     >
       <div className="relative flex items-center justify-center pb-1.5">
@@ -48,7 +52,7 @@ export function MobileGoBar({
         <button
           type="button"
           onClick={onAdd}
-          className="absolute top-0 right-0 flex h-8 items-center px-1 text-sm text-white/45 active:text-white"
+          className="absolute top-0 left-0 flex h-8 items-center px-1 text-sm text-white/45 active:text-white"
         >
           ＋ 新增
         </button>

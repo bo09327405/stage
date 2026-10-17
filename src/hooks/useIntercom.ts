@@ -15,6 +15,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { intercomAudio, playCallBuzzer, unlockOnFirstGesture } from '../services/buzzer'
 import { currentUser } from '../services/auth'
+import { deviceId, disableCallPush, enableCallPush, pushStatus, ringCallPush, syncCallPush, type PushStatus } from '../services/callPush'
 import { db } from '../services/firebase'
 import { VoiceMesh } from '../services/voiceMesh'
 import {
@@ -243,6 +244,7 @@ export function useIntercom(projectId: string) {
         if (call.target === '*' && !channelsMeet(channelRef.current, call.channel)) return
         setAlert({ call, direct: call.target === MEMBER_ID })
         playCallBuzzer()
+        navigator.vibrate?.([300, 120, 300, 120, 600])
       }),
     [base],
   )
@@ -265,9 +267,31 @@ export function useIntercom(projectId: string) {
         // Client clock is fine here: it's only used to drop stale calls.
         at: Date.now(),
       })
+      // Phones with the app in the background hear it through Web Push.
+      ringCallPush(projectId, { target, channel, name: identity.name, role: identity.role })
     },
-    [base, identity, channel],
+    [base, identity, channel, projectId],
   )
+
+  /* ---------- background alerts (Web Push) ---------- */
+
+  const [pushState, setPushState] = useState<PushStatus>(() => pushStatus())
+  const pushInfo = identity ? { memberId: MEMBER_ID, name: identity.name, role: identity.role, channel } : null
+  const enablePush = useCallback(async () => {
+    if (!pushInfo) throw new Error('請先加入 Intercom')
+    await enableCallPush(base, pushInfo)
+    setPushState(pushStatus())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base, identity, channel])
+  const disablePush = useCallback(async () => {
+    await disableCallPush(base)
+    setPushState(pushStatus())
+  }, [base])
+  // Keep the stored subscription pointing at this tab and channel.
+  useEffect(() => {
+    if (joined && pushInfo) syncCallPush(base, pushInfo).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joined, base, identity, channel])
 
   /* ---------- voice ---------- */
 
@@ -460,6 +484,8 @@ export function useIntercom(projectId: string) {
     setJoined(false)
     await onDisconnect(memberRef).cancel().catch(() => {})
     await remove(memberRef).catch(() => {})
+    // Left the channel: stop ringing this device (re-joining brings it back if alerts are on).
+    await remove(ref(db, `${base}/push/${deviceId()}`)).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disableVoice])
 
@@ -499,6 +525,8 @@ export function useIntercom(projectId: string) {
     unread,
     markRead,
     call,
+    /** Background CALL alerts (Web Push): works with the app in the background / phone locked. */
+    push: { status: pushState, enable: enablePush, disable: disablePush },
     alert,
     dismissAlert: () => setAlert(null),
     voice: {

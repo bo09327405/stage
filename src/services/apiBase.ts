@@ -12,7 +12,7 @@ const BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/+
 /** Served by the Worker: file storage, the Notion page reader and text-to-speech. */
 // On the dev server the local proxies for these two work (and know the local keys / model), so only
 // the hosted build sends them to the Worker.
-const PREFIXES = import.meta.env.DEV ? ['/api/r2/'] : ['/api/r2/', '/api/notion', '/api/tts']
+const PREFIXES = import.meta.env.DEV ? ['/api/r2/'] : ['/api/r2/', '/api/notion', '/api/tts', '/api/push/']
 const isApiPath = (path: string) => PREFIXES.some((p) => path.startsWith(p))
 
 /**

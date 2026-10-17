@@ -70,7 +70,7 @@ export function StageViewer({
     <div
       className="flex h-full min-h-0 w-full flex-col"
       // Any click in the viewer counts as the gesture browsers need before audio may play.
-      onPointerDownCapture={() => audio.needsTap && audio.unlock()}
+      onClickCapture={() => audio.needsTap && audio.unlock()}
       data-stage-viewer={variant}
     >
       <header className={`flex shrink-0 items-center gap-1 border-b border-white/10 ${mini ? 'px-1.5 py-1' : 'py-2 pr-3 pl-4'}`}>

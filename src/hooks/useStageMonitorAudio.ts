@@ -1,5 +1,5 @@
 import { dimGain } from '../utils/dim'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { stageAudio } from '../services/audioEngine'
 import { useStageMonitor } from '../services/stageMonitor'
 import type { useTheatreEngine } from './useTheatreEngine'
@@ -32,11 +32,15 @@ export function useStageMonitorAudio(engine: ReturnType<typeof useTheatreEngine>
   const { sound: enabled, audience, dim: monitorDim, dimDb: monitorDimDb } = useStageMonitor()
   const [state, setState] = useState(() => stageAudio.contextState)
   const [blocked, setBlocked] = useState(false)
+  const [primed, setPrimed] = useState(() => stageAudio.isPrimed)
+  const latest = useRef({ serverNow, audience })
+  latest.current = { serverNow, audience }
 
   const unlock = () => {
     stageAudio.unlock(serverNow, audience)
     stageAudio.resume()
     setState(stageAudio.contextState)
+    setPrimed(stageAudio.isPrimed)
     setBlocked(false)
   }
 
@@ -65,9 +69,25 @@ export function useStageMonitorAudio(engine: ReturnType<typeof useTheatreEngine>
       stageAudio.resume()
     }
     // The context's state changes asynchronously after resume(); poll it.
-    const timer = window.setInterval(() => setState(stageAudio.contextState), 500)
+    const timer = window.setInterval(() => {
+      setState(stageAudio.contextState)
+      setPrimed(stageAudio.isPrimed)
+    }, 500)
+    // Phones: the first tap anywhere on the page (GO, a cue, a fader…) switches the sound on. iOS only counts
+    // click / touchend as a gesture — not pointerdown — and priming the audio elements must happen inside one.
+    const onGesture = () => {
+      if (stageAudio.contextState === 'running' && stageAudio.isPrimed) return
+      stageAudio.unlock(latest.current.serverNow, latest.current.audience)
+      stageAudio.resume()
+      setState(stageAudio.contextState)
+      setPrimed(stageAudio.isPrimed)
+      setBlocked(false)
+    }
+    const events = ['touchend', 'click', 'keydown'] as const
+    for (const ev of events) document.addEventListener(ev, onGesture, { capture: true, passive: true })
     return () => {
       window.clearInterval(timer)
+      for (const ev of events) document.removeEventListener(ev, onGesture, { capture: true })
       if (stageAudio.onBlocked === onBlocked) stageAudio.onBlocked = () => {}
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -98,5 +118,5 @@ export function useStageMonitorAudio(engine: ReturnType<typeof useTheatreEngine>
     if (enabled) stageAudio.playHit(showState.hit)
   }, [enabled, showState.hit])
 
-  return { sound: enabled, playing: enabled && state === 'running' && !blocked, needsTap: enabled && (state !== 'running' || blocked), unlock }
+  return { sound: enabled, playing: enabled && state === 'running' && !blocked, needsTap: enabled && (state !== 'running' || blocked || !primed), unlock }
 }

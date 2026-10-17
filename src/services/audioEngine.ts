@@ -13,6 +13,8 @@ import {
   type Cue,
 } from '../types/cue'
 import { prepareStudioMix, studioMixUrl } from '../studio/cueMix'
+import type { FadeShape } from '../types/studio'
+import { fadeCurve } from '../utils/fadeCurve'
 import { setNowPlaying, startBackgroundPlayback, startTicker } from './backgroundAudio'
 
 /**
@@ -117,6 +119,34 @@ export class StageAudioEngine {
     return this.ctx !== null
   }
 
+  /**
+   * True once a media element has really been started inside a user gesture. iOS only lets an element play
+   * later (when a cue fires) if it was primed like that; a context created outside a tap (pointerdown)
+   * is "unlocked" but silent until primed again.
+   */
+  private primed = false
+  get isPrimed() {
+    return this.primed
+  }
+
+  /** Prime every idle element again — call inside a gesture when an earlier attempt didn't take. */
+  private reprime() {
+    const silent = silentWavUrl()
+    const slots = [...this.cuePool, ...this.hitPool, ...(this.videoSlot ? [this.videoSlot] : [])]
+    for (const slot of slots) {
+      if (slot.owner) continue
+      slot.el.src = silent
+      slot.el.play().then(
+        () => {
+          slot.el.pause()
+          this.primed = true
+        },
+        () => {},
+      )
+    }
+    setTimeout(() => URL.revokeObjectURL(silent), 5000)
+  }
+
   /** "running" once sound can actually come out; "suspended" until a tap allows it. */
   get contextState(): AudioContextState | 'none' {
     return this.ctx?.state ?? 'none'
@@ -131,7 +161,10 @@ export class StageAudioEngine {
   unlock(serverNow: () => number, audienceId: string) {
     this.serverNow = serverNow
     this.audienceId = audienceId
-    if (this.ctx) return this.resume()
+    if (this.ctx) {
+      if (!this.primed) this.reprime()
+      return this.resume()
+    }
 
     const ctx = new AudioContext()
     this.ctx = ctx
@@ -152,7 +185,13 @@ export class StageAudioEngine {
       if (duckable) duck.connect(this.master!)
       // Priming play() inside the gesture is what unlocks the element on iOS.
       el.src = silent
-      el.play().then(() => el.pause(), () => {})
+      el.play().then(
+        () => {
+          el.pause()
+          this.primed = true
+        },
+        () => {},
+      )
       return { el, env, live, pan, duck, owner: null, lastUsed: 0, duckTarget: 1 }
     }
     this.cuePool = Array.from({ length: CUE_POOL_SIZE }, () => makeSlot(new Audio(), true))
@@ -494,8 +533,14 @@ export class StageAudioEngine {
       const t = ctx.currentTime
       env.gain.cancelScheduledValues(t)
       if (cue.fadeInTime > 0 && offset < cue.fadeInTime) {
-        env.gain.setValueAtTime(target * (offset / cue.fadeInTime), t)
-        env.gain.linearRampToValueAtTime(target, t + (cue.fadeInTime - offset))
+        const done = offset / cue.fadeInTime
+        const left = cue.fadeInTime - offset
+        if (cue.fadeInShape && cue.fadeInShape !== 'linear' && left > CUT_FADE) {
+          env.gain.setValueCurveAtTime(fadeCurve(cue.fadeInShape, target, false, done), t, left)
+        } else {
+          env.gain.setValueAtTime(target * done, t)
+          env.gain.linearRampToValueAtTime(target, t + left)
+        }
       } else {
         env.gain.setValueAtTime(target, t)
       }
@@ -505,7 +550,7 @@ export class StageAudioEngine {
         if (cue.fadeOutTime > 0) {
           const msToFade = msToEnd - cue.fadeOutTime * 1000
           voice.timers.push(
-            window.setTimeout(() => this.rampTo(env, 0, Math.min(cue.fadeOutTime, msToEnd / 1000)), Math.max(0, msToFade)),
+            window.setTimeout(() => this.rampTo(env, 0, Math.min(cue.fadeOutTime, msToEnd / 1000), cue.fadeOutShape), Math.max(0, msToFade)),
           )
         }
         voice.timers.push(window.setTimeout(() => this.releaseVoice(inst.instanceId), msToEnd))
@@ -560,10 +605,16 @@ export class StageAudioEngine {
     }
   }
 
-  private rampTo(gain: GainNode, value: number, seconds: number) {
+  private rampTo(gain: GainNode, value: number, seconds: number, shape?: FadeShape) {
     const t = this.ctx!.currentTime
+    const from = gain.gain.value
     gain.gain.cancelScheduledValues(t)
-    gain.gain.setValueAtTime(gain.gain.value, t)
+    gain.gain.setValueAtTime(from, t)
+    // A shaped fade-out (log / smooth…) falls to silence along the same curve as in the editor.
+    if (value === 0 && shape && shape !== 'linear' && seconds > CUT_FADE && from > 0) {
+      gain.gain.setValueCurveAtTime(fadeCurve(shape, from, true), t, seconds)
+      return
+    }
     gain.gain.linearRampToValueAtTime(value, t + Math.max(CUT_FADE, seconds))
   }
 
@@ -573,7 +624,7 @@ export class StageAudioEngine {
     voice.stopping = true
     voice.timers.forEach(clearTimeout)
     voice.timers = []
-    this.rampTo(voice.slot.env, 0, fadeSeconds)
+    this.rampTo(voice.slot.env, 0, fadeSeconds, voice.inst.cue.fadeOutShape)
     voice.timers.push(window.setTimeout(() => this.releaseVoice(instanceId), Math.max(CUT_FADE, fadeSeconds) * 1000 + 50))
   }
 

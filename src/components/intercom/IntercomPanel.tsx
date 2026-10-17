@@ -141,6 +141,7 @@ function JoinedBody({ intercom }: { intercom: Intercom }) {
           <span className="text-xs font-semibold tracking-normal opacity-80">呼叫全體</span>
         </motion.button>
         <ChannelPicker intercom={intercom} />
+        <PushAlerts intercom={intercom} />
         <VoiceControls intercom={intercom} />
       </div>
 
@@ -371,5 +372,46 @@ export function IntercomButton({ intercom, onClick }: { intercom: Intercom; onCl
         </span>
       )}
     </button>
+  )
+}
+
+/** Opt in to CALL alerts while the app is in the background (notification + vibration). */
+function PushAlerts({ intercom }: { intercom: Intercom }) {
+  const { push } = intercom
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  if (push.status === 'unsupported') return null
+
+  if (push.status === 'needs-install')
+    return (
+      <p className="rounded-lg bg-white/[0.04] px-3 py-2 text-xs leading-relaxed text-white/50" data-push-hint>
+        🔔 想在背景收到 CALL 震動通知：請用 Safari「分享 → 加入主畫面」，從主畫面開啟此 App 後再開啟通知（iOS 16.4 以上）。
+      </p>
+    )
+
+  const on = push.status === 'on'
+  return (
+    <div className="space-y-1.5" data-push-alerts>
+      <button
+        type="button"
+        disabled={busy || push.status === 'denied'}
+        onClick={async () => {
+          setBusy(true)
+          setError(null)
+          try {
+            await (on ? push.disable() : push.enable())
+          } catch (err) {
+            setError((err as Error).message)
+          } finally {
+            setBusy(false)
+          }
+        }}
+        className={`min-h-12 w-full rounded-xl text-sm font-semibold transition disabled:opacity-50 ${on ? 'bg-standby/20 text-standby' : 'bg-white/[0.07] text-white/80 hover:bg-white/15'}`}
+        aria-pressed={on}
+      >
+        {push.status === 'denied' ? '🔕 通知被封鎖（請到設定開啟）' : on ? '🔔 背景震動通知：已開啟（點一下關閉）' : '🔔 開啟背景震動通知'}
+      </button>
+      {error && <p className="text-xs text-panic">{error}</p>}
+    </div>
   )
 }

@@ -1,3 +1,4 @@
+import type { FadeShape } from './studio'
 import type { ExecutorRun } from './sequence'
 import type { CueTrigger } from './trigger'
 
@@ -99,6 +100,8 @@ export interface Cue {
   /** Lower every other running audio cue by this many percent while this cue plays (0 = off). */
   duckOthers: number
   fadeInTime: number
+  /** Fade-in curve (same shapes as the Studio's region fades); linear when unset. */
+  fadeInShape: FadeShape
 
   // — After this cue starts —
   followMode: FollowMode
@@ -120,6 +123,7 @@ export interface Cue {
   /** Number of plays when looping; 0 = forever. */
   loopCount: number
   fadeOutTime: number
+  fadeOutShape: FadeShape
   /** Seconds after this cue's GO during which GO is locked (guards against double presses). */
   preventGoDuration: number
 
@@ -156,6 +160,7 @@ export const DEFAULT_CUE: Omit<Cue, 'id'> = {
   stopOthers: 'none',
   duckOthers: 0,
   fadeInTime: 0,
+  fadeInShape: 'linear',
   followMode: 'none',
   postWaitTime: 0,
   autoStopAfter: 0,
@@ -163,6 +168,7 @@ export const DEFAULT_CUE: Omit<Cue, 'id'> = {
   loop: false,
   loopCount: 0,
   fadeOutTime: 0,
+  fadeOutShape: 'linear',
   preventGoDuration: 0,
   targetMode: 'all',
   targetIds: [],

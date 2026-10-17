@@ -1,5 +1,6 @@
 import { isAdmin, useAuth } from '../../services/auth'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { studioMixUrl } from '../../studio/cueMix'
 import type { CloudinaryUploadResult } from '../../services/cloudinary'
 import { formatTime } from '../../hooks/useServerNow'
 import { mediaFromUpload, uploadTitle } from '../../utils/uploadCue'
@@ -32,6 +33,24 @@ import { StudioBinding } from './StudioBinding'
 import { WaveformTrimmer } from './WaveformTrimmer'
 
 type Draft = Omit<Cue, 'id'>
+
+/** The rendered mix of a Studio project as a blob URL (null while rendering). */
+function useStudioMixUrl(projectId: string, studioId: string) {
+  const [state, setState] = useState<{ key: string; url: string | null; error: string | null }>({ key: '', url: null, error: null })
+  const key = projectId && studioId ? `${projectId}/${studioId}` : ''
+  useEffect(() => {
+    if (!key) return
+    let live = true
+    studioMixUrl(projectId, studioId).then(
+      (url) => live && setState({ key, url, error: null }),
+      (err: Error) => live && setState({ key, url: null, error: err.message }),
+    )
+    return () => {
+      live = false
+    }
+  }, [key, projectId, studioId])
+  return state.key === key && key ? state : { key, url: null, error: null }
+}
 
 /**
  * JSON with object keys sorted. Firebase returns keys alphabetically while the draft keeps
@@ -120,6 +139,9 @@ export function CueEditor({
   const [audioSource, setAudioSource] = useState<'file' | 'studio'>(initial.studioId ? 'studio' : 'file')
   const studioMode = draft.type === 'AUDIO' && audioSource === 'studio'
   const usesUrl = (media || draft.type === 'IMAGE') && !studioMode
+  // Studio cues draw the waveform of the project's rendered mix (rendered on this device, in memory).
+  const studioMix = useStudioMixUrl(studioMode ? projectId : '', studioMode ? draft.studioId : '')
+  const waveUrl = studioMode ? (studioMix.url ?? '') : draft.targetUrl
 
   const pickFromInbox = (upload: AudienceUpload) =>
     setDraft((d) => ({ ...d, ...mediaFromUpload(upload), title: d.title || uploadTitle(upload) }))
@@ -172,7 +194,6 @@ export function CueEditor({
         title: draft.title.trim(),
         targetUrl: usesUrl ? normalizeMediaInput(draft.targetUrl) : '',
         studioId: studioMode ? draft.studioId : '',
-        ...(studioMode ? { mediaStartTime: 0, mediaEndTime: 0 } : {}),
       })
     } catch (err) {
       setError((err as Error).message)
@@ -422,13 +443,18 @@ export function CueEditor({
               </p>
             )}
 
-            {media && draft.targetUrl && !studioMode && (
+            {media && studioMode && draft.studioId && !studioMix.url && (
+              <p className="rounded-lg bg-white/[0.03] p-4 text-center text-xs text-white/45" data-studio-wave-status>
+                {studioMix.error ? `無法產生混音波形：${studioMix.error}` : '正在混音 Studio 專案以顯示波形…'}
+              </p>
+            )}
+            {media && waveUrl && (
               <>
                 <div>
                   <Label hint="黃色把手裁剪 · 藍色把手拉淡入淡出">波形 · 裁剪 · Fades</Label>
                   <WaveformTrimmer
-                    key={draft.targetUrl}
-                    url={draft.targetUrl}
+                    key={waveUrl}
+                    url={waveUrl}
                     start={draft.mediaStartTime}
                     end={draft.mediaEndTime}
                     onChange={(s, e) => setDraft((d) => ({ ...d, mediaStartTime: s, mediaEndTime: e }))}
@@ -439,6 +465,10 @@ export function CueEditor({
                     loop={draft.loop}
                     volume={draft.volume}
                     onFadesChange={(fadeInTime, fadeOutTime) => setDraft((d) => ({ ...d, fadeInTime, fadeOutTime }))}
+                    fadeInShape={draft.fadeInShape}
+                    fadeOutShape={draft.fadeOutShape}
+                    onShapesChange={(fadeInShape, fadeOutShape) => setDraft((d) => ({ ...d, fadeInShape, fadeOutShape }))}
+                    onVolumeChange={(volume) => setDraft((d) => (d.volume === volume ? d : { ...d, volume }))}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">

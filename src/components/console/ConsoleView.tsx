@@ -304,6 +304,8 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  // Header folded: the Go bar is the topmost thing, so it must clear the notch / Dynamic Island itself.
+  const barInset = bar.collapsed ? 'env(safe-area-inset-top, 0px)' : '0px'
   const clock = new Date(now).toLocaleTimeString('zh-TW', { hour12: false })
 
   return (
@@ -314,7 +316,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
           <button
             type="button"
             onClick={() => bar.setCollapsed(false)}
-            className="absolute top-0 right-[max(0.75rem,env(safe-area-inset-right,0px))] z-[61] flex h-6 items-center gap-1 rounded-b-xl border border-t-0 border-line bg-panel/95 px-3 text-[11px] whitespace-nowrap text-white/55 opacity-70 shadow-lg backdrop-blur-xl transition hover:text-white hover:opacity-100 pointer-coarse:h-9 pointer-coarse:px-5 pointer-coarse:text-xs"
+            className="absolute top-[calc(env(safe-area-inset-top,0px)+0.25rem)] right-[max(0.75rem,env(safe-area-inset-right,0px))] z-[61] flex h-6 items-center gap-1 rounded-b-xl border border-t-0 border-line pointer-coarse:rounded-xl pointer-coarse:border-t bg-panel/95 px-3 text-[11px] whitespace-nowrap text-white/55 opacity-70 shadow-lg backdrop-blur-xl transition hover:text-white hover:opacity-100 pointer-coarse:h-9 pointer-coarse:px-5 pointer-coarse:text-xs"
             aria-label="展開頂端列"
             aria-expanded="false"
             data-header-toggle="folded"
@@ -560,6 +562,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
           {compact && (
             <MobileGoBar
               title={projectName}
+              clearTopInset={bar.collapsed}
               playbackState={playbackState}
               standbyCue={standbyCue}
               firstCue={cues[0] ?? null}
@@ -637,7 +640,10 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
             />
             <div className={`min-h-[240px] flex-1 ${compact ? 'flex' : 'overflow-y-auto'}`}>
               {compact && (
-                <div className="sticky top-[176px] z-20 h-[calc(100dvh-176px-5rem-env(safe-area-inset-bottom,0px))] shrink-0 self-start border-r border-line bg-[#151517]">
+                <div
+                  className="sticky z-20 shrink-0 self-start border-r border-line bg-[#151517]"
+                  style={{ top: `calc(176px + ${barInset})`, height: `calc(100dvh - 176px - ${barInset} - 5rem - env(safe-area-inset-bottom, 0px))` }}
+                >
                   <MobileSideRail
                     effective={showState.masterVolume * dimGain(showState.dim, showState.dim ? clampDimDb(showState.dimDb ?? DEFAULT_DIM_DB) : consoleDimDb)}
                     dim={showState.dim}
