@@ -16,7 +16,7 @@ self.addEventListener('push', (event) => {
       if (windows.some((w) => w.visibilityState === 'visible')) return
       await self.registration.showNotification(data.title || '📞 Intercom 呼叫', {
         body: data.body || '點開回到 Intercom',
-        tag: 'intercom-call',
+        tag: data.type === 'announce' ? 'announce' : 'intercom-call',
         renotify: true,
         requireInteraction: true,
         // Android: long, unmistakable pattern. iOS ignores `vibrate` and uses the system alert haptic.
