@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { setListenOnly } from '../../services/audioSession'
 import { useAudienceChannel } from '../../hooks/useAudienceChannel'
 import { useVibrationCues } from '../../hooks/useVibrationCues'
-import { useAudienceVoice } from '../../services/audienceVoice'
+import { primeAudienceVoice, useAudienceVoice } from '../../services/audienceVoice'
+import { hapticMode, playVibration } from '../../services/vibration'
 import { audiencePushStatus, disableAudiencePush, enableAudiencePush, syncAudiencePush, type AudiencePushStatus } from '../../services/audiencePush'
 import { channelColor, channelLabel, reachesChannel, type Announcement } from '../../types/channels'
 import { GroupPicker } from './GroupPicker'
@@ -38,6 +40,11 @@ async function requestWakeLock() {
  * pins one with ?project=…&version=… (handy for rehearsing a non-live version on a test phone).
  */
 export function AudienceView({ pinned }: { pinned: ShowRef | null }) {
+  // The audience only listens: no show microphone, ever (see services/audioSession.ts).
+  useEffect(() => {
+    setListenOnly(true)
+    return () => setListenOnly(false)
+  }, [])
   const live = useLivePointer()
   const show: ShowRef | null = pinned ?? (live ? { projectId: live.projectId, versionId: live.versionId } : null)
   const [audienceId] = useState(getAudienceId)
@@ -74,6 +81,7 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
   const seenAnnounce = useRef<string | null | undefined>(undefined)
   const [pushState, setPushState] = useState<AudiencePushStatus>(() => audiencePushStatus())
   const [pushError, setPushError] = useState<string | null>(null)
+  const [hapticNote, setHapticNote] = useState<string | null>(null)
   const [blocked, setBlocked] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
@@ -164,7 +172,8 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
   const handleEnter = () => {
     askNotifications(channel)
     // unlock() must run synchronously inside this tap for iOS to allow audio.
-    stageAudio.unlock(serverNow, audienceId)
+    stageAudio.unlock(serverNow, audienceId, true)
+    primeAudienceVoice() // so the operator's live voice may play later
     // Speech needs one utterance started inside a tap on iPhone before later announcements may speak.
     try {
       window.speechSynthesis?.speak(new SpeechSynthesisUtterance(''))
@@ -253,6 +262,26 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
         </span>
       )}
 
+      {/* Haptic self-test: shows which mechanism this phone really has */}
+      {entered && (
+        <div className="absolute right-3 bottom-[max(4.5rem,calc(env(safe-area-inset-bottom)+3.5rem))] flex flex-col items-end gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              const r = playVibration({ vibrationCount: 3, vibrationDuration: 400, vibrationInterval: 200 }, stageAudio.context)
+              setHapticNote(
+                r === 'vibrate' ? '✓ 手機震動馬達' : r === 'audio' ? '✓ 此手機（iPhone/iPad）不能網頁震動，已改用「咚咚」聲' : '⚠ 無法震動也無聲音：請確認非靜音、音量已開',
+              )
+              window.setTimeout(() => setHapticNote(null), 6000)
+            }}
+            className="min-h-10 rounded-full bg-white/10 px-4 text-[11px] text-white/60 active:bg-white/20"
+            data-audience-haptic-test
+          >
+            📳 測試震動（{hapticMode() === 'vibrate' ? '馬達' : '聲音模擬'}）
+          </button>
+          {hapticNote && <span className="max-w-[16rem] rounded-lg bg-black/70 px-2 py-1 text-right text-[10px] text-white/70">{hapticNote}</span>}
+        </div>
+      )}
       {entered && voice.connected && (
         <span className="pointer-events-none absolute inset-x-0 bottom-[max(4.5rem,calc(env(safe-area-inset-bottom)+3.5rem))] mx-auto w-fit rounded-full bg-black/60 px-3 py-1 text-[11px] text-white/60 backdrop-blur" data-audience-voice="connected">
           🎙 現場語音已連線（只收聽）

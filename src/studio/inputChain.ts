@@ -1,4 +1,5 @@
 import { DEFAULT_INPUT, type TrackInput } from '../types/studio'
+import { openMicrophone } from '../services/audioSession'
 import { SAMPLE_RATE } from './audio'
 import { TUNER_SOURCE, tunerParams } from './tuner'
 
@@ -146,7 +147,8 @@ export class InputChain {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('此瀏覽器不支援麥克風（需要 HTTPS 或 localhost）')
     let stream: MediaStream
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
+      stream = await openMicrophone(
+        {
         audio: {
           deviceId: deviceId ? { exact: deviceId } : undefined,
           channelCount: { ideal: stereo ? 2 : 1 },
@@ -155,7 +157,9 @@ export class InputChain {
           noiseSuppression: false,
           autoGainControl: false,
         },
-      })
+      },
+        'crew',
+      )
     } catch (err) {
       const name = (err as DOMException).name
       throw new Error(

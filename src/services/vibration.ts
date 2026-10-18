@@ -40,7 +40,7 @@ export type HapticMode = 'vibrate' | 'audio'
 /** How this device will play a vibration cue in the foreground. */
 export const hapticMode = (): HapticMode => (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function' ? 'vibrate' : 'audio')
 
-/** The Web Audio stand-in: one soft low "thump" per pulse. */
+/** The Web Audio stand-in: one low "thump" per pulse (low enough to feel, with upper partials a phone speaker can play). */
 function playThumps(ctx: AudioContext, p: VibrationParams) {
   const { vibrationCount: n, vibrationDuration: d, vibrationInterval: gap } = clampVibration(p)
   const t0 = ctx.currentTime + 0.02
@@ -49,12 +49,12 @@ function playThumps(ctx: AudioContext, p: VibrationParams) {
     const end = start + d / 1000
     const env = ctx.createGain()
     env.gain.setValueAtTime(0, start)
-    env.gain.linearRampToValueAtTime(0.9, start + 0.006)
-    env.gain.setValueAtTime(0.9, Math.max(start + 0.006, end - 0.02))
+    env.gain.linearRampToValueAtTime(1, start + 0.006)
+    env.gain.setValueAtTime(1, Math.max(start + 0.006, end - 0.02))
     env.gain.linearRampToValueAtTime(0, end)
     env.connect(ctx.destination)
     // A low tone with its octave: small phone speakers reproduce the upper part, the hand feels the lower.
-    for (const hz of [70, 140]) {
+    for (const hz of [110, 220, 440]) {
       const osc = ctx.createOscillator()
       osc.type = 'sine'
       osc.frequency.value = hz

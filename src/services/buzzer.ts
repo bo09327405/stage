@@ -75,13 +75,6 @@ function ensureElement() {
 /** Call inside a tap / key press: unlocks both the audio context and the ring element for later calls. */
 export function primeRingtone() {
   intercomAudio()
-  // iOS 17+: treat call tones as media playback, so they sound with the ring / silent switch off.
-  try {
-    const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession
-    if (session) session.type = 'playback'
-  } catch {
-    // Not supported; the <audio> element path still works.
-  }
   // Once unlocked, don't touch the element again (a later tap must not cut a ringing call).
   if (primed) return
   const el = ensureElement()

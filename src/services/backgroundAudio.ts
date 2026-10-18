@@ -19,6 +19,8 @@
  * Everything here is best-effort and silent on failure: unsupported browsers just keep today's behaviour.
  */
 
+import { setAudioSession } from './audioSession'
+
 let started = false
 let keepAlive: HTMLAudioElement | null = null
 
@@ -55,12 +57,7 @@ export function startBackgroundPlayback(ctx: AudioContext, resume: () => void) {
   started = true
 
   // iOS 17+: treat the page as media playback (background, lock screen, ignores the mute switch).
-  try {
-    const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession
-    if (session) session.type = 'playback'
-  } catch {
-    /* unsupported */
-  }
+  setAudioSession('playback')
 
   // Silent loop that keeps the page counted as playing media.
   try {

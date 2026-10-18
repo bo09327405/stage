@@ -1,4 +1,5 @@
 import type { Signal } from '../types/intercom'
+import { ListenOnlyError, openMicrophone, releaseMicrophone } from './audioSession'
 
 /**
  * Full-mesh WebRTC voice for a small crew: one RTCPeerConnection per pair of stations.
@@ -31,6 +32,10 @@ const isHomeScreenApp = () => window.matchMedia?.('(display-mode: standalone)').
 
 export function describeMicError(err: unknown): string {
   const name = (err as DOMException)?.name
+  if (err instanceof ListenOnlyError) return `${err.message}。`
+  if (name === 'InvalidStateError') {
+    return '麥克風無法啟用：這台裝置的音訊模式目前與錄音衝突（iOS：AudioSession 類別不相容）。請完全關閉此 App／分頁後重新開啟，先不要開啟 Stage 聲音，再按「重新開啟麥克風」。目前為僅收聽模式。'
+  }
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
     return '此網址不支援麥克風：語音需要 https 或 localhost（區網 http 無法使用）。目前為僅收聽模式。'
   }
@@ -68,9 +73,7 @@ export class VoiceMesh {
    */
   async start(): Promise<string | null> {
     try {
-      this.localStream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      })
+      this.localStream = await openMicrophone({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }, 'crew')
       this.setMicEnabled(this.micEnabled)
       return null
     } catch (err) {
@@ -136,6 +139,7 @@ export class VoiceMesh {
       this.closePeer(id)
     }
     this.localStream?.getTracks().forEach((t) => t.stop())
+    if (this.localStream) releaseMicrophone()
     this.localStream = null
   }
 

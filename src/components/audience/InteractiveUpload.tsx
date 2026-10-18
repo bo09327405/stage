@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { openMicrophone, releaseMicrophone } from '../../services/audioSession'
 import type { CloudinaryUploadResult } from '../../services/cloudinary'
 import { openAudienceWidget, type WidgetMedia } from '../../services/cloudinaryWidget'
 import { audienceContext, audienceTags, recordAudienceUpload, submitAudienceMedia } from '../../services/uploads'
@@ -238,13 +239,15 @@ function VoiceRecorder({ onRecorded }: { onRecorded: (blob: Blob) => void }) {
   async function start() {
     setError(null)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // The one microphone use on an audience page: a recording the person starts with a tap, for an upload cue.
+      const stream = await openMicrophone({ audio: true }, 'upload')
       const mimeType = pickMimeType()
       const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
       const chunks: Blob[] = []
       rec.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data)
       rec.onstop = () => {
         stream.getTracks().forEach((t) => t.stop())
+        releaseMicrophone()
         const recorded = new Blob(chunks, { type: rec.mimeType || 'audio/webm' })
         setBlob(recorded)
         setPreviewUrl(URL.createObjectURL(recorded))
@@ -255,7 +258,8 @@ function VoiceRecorder({ onRecorded }: { onRecorded: (blob: Blob) => void }) {
       setSeconds(0)
       setState('recording')
     } catch (err) {
-      setError((err as Error).name === 'NotAllowedError' ? '需要麥克風權限才能錄音' : (err as Error).message)
+      const name = (err as Error).name
+      setError(name === 'NotAllowedError' ? '需要麥克風權限才能錄音' : name === 'InvalidStateError' ? '目前的音訊模式無法錄音，請重新整理頁面後再試' : (err as Error).message)
     }
   }
 

@@ -12,6 +12,39 @@ import { db } from './firebase'
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }]
 
+/**
+ * The audience's voice player. One shared <audio> element, started once inside the entry tap (iOS only lets an
+ * element play later, when the operator speaks, if it was started from a gesture first).
+ */
+let voiceEl: HTMLAudioElement | null = null
+export function primeAudienceVoice() {
+  if (!voiceEl) {
+    voiceEl = new Audio()
+    voiceEl.setAttribute('playsinline', '')
+  }
+  // A short silent clip, only to get the element "started by a tap".
+  const silent = new Uint8Array(44 + 800)
+  const v = new DataView(silent.buffer)
+  const ascii = (o: number, s: string) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)))
+  ascii(0, 'RIFF')
+  v.setUint32(4, 36 + 800, true)
+  ascii(8, 'WAVEfmt ')
+  v.setUint32(16, 16, true)
+  v.setUint16(20, 1, true)
+  v.setUint16(22, 1, true)
+  v.setUint32(24, 8000, true)
+  v.setUint32(28, 8000, true)
+  v.setUint16(32, 1, true)
+  v.setUint16(34, 8, true)
+  ascii(36, 'data')
+  v.setUint32(40, 800, true)
+  silent.fill(128, 44)
+  const url = URL.createObjectURL(new Blob([silent], { type: 'audio/wav' }))
+  voiceEl.src = url
+  voiceEl.play().then(() => voiceEl?.pause(), () => {})
+  window.setTimeout(() => URL.revokeObjectURL(url), 5000)
+}
+
 export interface AudienceTarget {
   audienceId: string
   /** Changes when the device reconnects, so it gets a fresh offer. */
@@ -140,7 +173,8 @@ export function useAudienceVoice(base: string, audienceId: string, unlocked: boo
     let lastSdp = ''
     let unsubIce: (() => void) | null = null
     const node = `${base}/voice/${audienceId}`
-    const el = new Audio()
+    if (!voiceEl) primeAudienceVoice()
+    const el = voiceEl!
     el.autoplay = true
     audio.current = el
 

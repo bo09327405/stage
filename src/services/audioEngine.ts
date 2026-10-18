@@ -188,7 +188,11 @@ export class StageAudioEngine {
   }
 
   /** Must be called synchronously inside a user gesture. */
-  unlock(serverNow: () => number, audienceId: string) {
+  /**
+   * `keepAlive` (audience pages only): hold the 'playback' audio session and a silent loop so sound survives the
+   * silent switch and a locked screen. Crew pages must not — that category blocks the microphone.
+   */
+  unlock(serverNow: () => number, audienceId: string, keepAlive = false) {
     this.serverNow = serverNow
     this.audienceId = audienceId
     if (this.ctx) {
@@ -231,7 +235,7 @@ export class StageAudioEngine {
 
     ctx.resume().catch(() => {})
     // Gesture-time setup for background / lock-screen playback, and a ticker the OS won't throttle.
-    startBackgroundPlayback(ctx, () => this.resume())
+    if (keepAlive) startBackgroundPlayback(ctx, () => this.resume())
     startTicker(TICK_MS, () => this.tick())
   }
 
