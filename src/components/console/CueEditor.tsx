@@ -33,6 +33,7 @@ import { ChannelTargets } from './ChannelTargets'
 import { HapticEditor } from './HapticEditor'
 import { BottomSheet } from '../ui/BottomSheet'
 import { MediaConverter } from './MediaConverter'
+import { VisualEditor } from './VisualEditor'
 import { UrlImporter } from './UrlImporter'
 import { uploadMediaFile } from '../../services/storage'
 import { YouTubePreview } from './YouTubePreview'
@@ -73,7 +74,7 @@ function stableStringify(value: unknown): string {
       : v,
   )
 }
-type TabId = 'basic' | 'media' | 'start' | 'after' | 'target' | 'triggers'
+type TabId = 'basic' | 'media' | 'visual' | 'start' | 'after' | 'target' | 'triggers'
 
 const TYPES: CueType[] = ['AUDIO', 'VIDEO', 'IMAGE', 'TEXT', 'INTERACTIVE_UPLOAD', 'BLACKOUT', 'VIBRATION']
 const UPLOAD_ACCEPT: Partial<Record<CueType, string>> = {
@@ -245,6 +246,7 @@ export function CueEditor({
           tabs={[
             { id: 'basic', label: '基本' },
             { id: 'media', label: '媒體' },
+            ...(draft.type === 'IMAGE' || (draft.type === 'VIDEO' && !isYoutubeCue(draft)) ? [{ id: 'visual' as const, label: draft.visual ? '視覺 ●' : '視覺' }] : []),
             { id: 'start', label: '開始時' },
             { id: 'after', label: '開始後' },
             { id: 'target', label: '派發' },
@@ -612,6 +614,23 @@ export function CueEditor({
               </div>
             )}
           </>
+        )}
+
+        {tab === 'visual' && (
+          draft.targetUrl ? (
+            <VisualEditor
+              draft={draft}
+              onChange={(visual) => set('visual', visual)}
+              saveFile={async (file) => {
+                const folder = uploadShared ? DEFAULT_MEDIA_FOLDER : cueMediaFolder(projectName, projectId)
+                const result = await uploadMediaFile(file, folder)
+                await (uploadShared ? recordSharedMedia(result, file, 'link', folder) : recordProjectMedia(projectId, result, file, folder, 'link')).catch(() => {})
+                return result
+              }}
+            />
+          ) : (
+            <p className="rounded-lg bg-white/[0.03] p-4 text-sm text-white/40">請先在「媒體」分頁選擇圖片或影片，再來編輯圖層與視覺效果。</p>
+          )
         )}
 
         {tab === 'start' && (

@@ -1,6 +1,7 @@
 import type { Announcement, ChannelConfig } from './channels'
 import { DEFAULT_CHANNELS, reachesChannel } from './channels'
 import type { FadeShape } from './studio'
+import { normalizeVisual, type CueVisual } from './visual'
 import type { ExecutorRun } from './sequence'
 import type { CueTrigger } from './trigger'
 
@@ -106,6 +107,8 @@ export interface Cue {
   fadeInTime: number
   /** Fade-in curve (same shapes as the Studio's region fades); linear when unset. */
   fadeInShape: FadeShape
+  /** IMAGE / VIDEO: layers, masks, colour grading and effects (non-destructive); null = plain media. */
+  visual: CueVisual | null
   // — Vibration (type VIBRATION; also the Pre-Wait reminder of any cue) —
   /** How many pulses. */
   vibrationCount: number
@@ -178,6 +181,7 @@ export const DEFAULT_CUE: Omit<Cue, 'id'> = {
   duckOthers: 0,
   fadeInTime: 0,
   fadeInShape: 'linear',
+  visual: null,
   vibrationCount: 3,
   vibrationDuration: 500,
   vibrationInterval: 200,
@@ -219,6 +223,7 @@ export function normalizeCue(raw: Omit<Partial<Cue>, 'stopOthers'> & LegacyCueFi
     stopOthers: stopOthers === true ? 'fade' : stopOthers === false || stopOthers == null ? 'none' : stopOthers,
     // RTDB drops empty arrays and may hand back arrays as objects.
     targetIds: Object.values(rest.targetIds ?? {}),
+    visual: normalizeVisual(rest.visual),
     // RTDB drops empty arrays: a cue with no stored list is for every group.
     targetChannels: (Object.values(rest.targetChannels ?? {}) as string[]).length ? (Object.values(rest.targetChannels ?? {}) as string[]) : ['all'],
     triggers: Object.values(rest.triggers ?? {}),

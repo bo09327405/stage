@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
+import { useState } from 'react'
 import { useServerNow } from '../../hooks/useServerNow'
 import { stageAudio } from '../../services/audioEngine'
 import {
@@ -17,6 +18,8 @@ import { dimGain } from '../../utils/dim'
 import { isYoutubeCue } from '../../utils/youtube'
 import { InteractiveUpload } from './InteractiveUpload'
 import { YouTubeCue } from './YouTubeCue'
+import { LayeredStage } from './LayeredStage'
+import { hasVisualEdits } from '../../types/visual'
 
 /**
  * Which visual instance owns this device's screen at `now`: the newest visual cue addressed to this
@@ -114,6 +117,12 @@ export function StageDisplay({
 
 function VisualCue({ inst, show, preview, uploadMock, now, frozen, level, audible }: { inst: ActiveCue; show: ShowRef; preview: boolean; uploadMock: boolean; now: number; frozen: boolean; level: number; audible: boolean }) {
   const { cue } = inst
+  // Layers / masks / grading / effects: composited on the GPU. Falls back to the plain picture if WebGL is missing.
+  const [layerFailed, setLayerFailed] = useState(false)
+  if ((cue.type === 'IMAGE' || cue.type === 'VIDEO') && hasVisualEdits(cue.visual) && !layerFailed && !isYoutubeCue(cue)) {
+    const elapsed = Math.max(0, instanceClock(inst, now) - activeStartAt(inst)) / 1000
+    return <LayeredStage cue={cue} visual={cue.visual} mode={uploadMock ? 'preview' : 'audience'} position={cue.mediaStartTime + elapsed} paused={frozen || inst.pausedAt != null} onError={() => setLayerFailed(true)} />
+  }
   switch (cue.type) {
     case 'IMAGE':
       return (
