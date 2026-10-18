@@ -1,6 +1,7 @@
 import { notionFailure, notionIdOf, readNotionPage } from '../server/notionCore.ts'
 import { ttsRoute } from './tts.ts'
 import { pushRoute } from './push.ts'
+import { analyzeMediaUrl, isAudioExt, isVideoExt, isPrivateHost, platformOf } from '../src/utils/mediaUrl.ts'
 import { callerFromHeaders, projectAccess, projectOfKey, type Caller } from '../server/projectAccess.ts'
 
 /**
@@ -242,6 +243,64 @@ async function handle(req: Request, env: Env, url: URL): Promise<Response> {
     const contentType = /^(audio|video|image)\/[\w.+-]+$/.test(up) ? up : typeOf(key)
     await env.BUCKET.put(key, body, { httpMetadata: { contentType } })
     return json(200, { key, url: r2Url(key), bytes: body.byteLength, contentType })
+  }
+
+  /**
+   * POST /api/r2/fetch-url?url=<https media file>&store=1&key=<theatre/…>: the server downloads a public audio / video
+   * FILE from a link and stores it in the project (store=1), or just relays the bytes back (store=0, so the browser can
+   * extract the audio track). Not for streaming-platform pages (YouTube, Vimeo, SoundCloud, Spotify …): those aren't
+   * files, their terms forbid downloading, and they are refused. Members of the project only; 250 MB cap.
+   */
+  if (path === '/fetch-url' && req.method === 'POST') {
+    if (!(await access.signedIn(caller))) return json(401, { error: '請先登入' })
+    const store = url.searchParams.get('store') !== '0'
+    const key = url.searchParams.get('key') ?? ''
+    if (store) {
+      if (!validKey(key)) return json(400, { error: '檔案路徑不合法（必須在 theatre/ 底下）' })
+      const target = mediaFolderOf(key)
+      if (!isDefaultKey(key) && !(await access.isAdmin(caller)) && (!target || !(await access.writableFolders(caller)).has(target))) return json(403, { error: '沒有權限匯入到這個專案（專案已鎖定為唯讀，或你不是成員）' })
+    }
+    let info = analyzeMediaUrl(url.searchParams.get('url') ?? '')
+    if (info.kind === 'platform') return json(422, { error: `${info.platform} 是串流平台的網頁，不是影音檔；本系統不提供從平台下載或擷取影音。請改用你有權使用的檔案直連網址，或直接上傳檔案。` })
+    if (info.kind !== 'file') return json(400, { error: info.note ?? '網址不合法' })
+    // Follow redirects by hand so every hop is checked (public host, not a platform page).
+    let upstream: Response | null = null
+    let current = info.url
+    for (let hop = 0; hop < 5; hop++) {
+      info = analyzeMediaUrl(current)
+      if (info.kind !== 'file' || isPrivateHost(info.host) || platformOf(info.host)) return json(422, { error: '連結被轉址到不支援的位置' })
+      upstream = await fetch(current, { redirect: 'manual', headers: { 'user-agent': 'TheatreCue/1.0 (media import)' } })
+      const next = upstream.headers.get('location')
+      if (upstream.status >= 300 && upstream.status < 400 && next) {
+        current = new URL(next, current).toString()
+        continue
+      }
+      break
+    }
+    if (!upstream || !upstream.ok || !upstream.body) return json(502, { error: `讀取網址失敗（HTTP ${upstream?.status ?? '無回應'}）` })
+    const ct = (upstream.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
+    const ext = info.ext
+    const looksMedia = /^(audio|video)\//.test(ct) || ((ct === 'application/octet-stream' || ct === 'binary/octet-stream' || ct === 'application/ogg') && (isAudioExt(ext) || isVideoExt(ext)))
+    if (!looksMedia) return json(415, { error: /^text\/html/.test(ct) ? '這個網址是一般網頁，不是影音檔（需要直接指向 mp3 / wav / mp4 等檔案的連結）' : `不支援的檔案類型（${ct || '未知'}）` })
+    const length = Number(upstream.headers.get('content-length') ?? 0)
+    if (length > MAX_UPLOAD) return json(413, { error: '檔案太大（上限 250 MB）' })
+    const contentType = /^(audio|video)\/[\w.+-]+$/.test(ct) ? ct : typeOf(`x.${ext}`)
+    if (!store) {
+      return new Response(upstream.body, { status: 200, headers: { 'content-type': contentType, ...(length ? { 'content-length': String(length) } : {}), 'cache-control': 'no-store', 'x-source-name': encodeURIComponent(info.name) } })
+    }
+    // Stored: R2 needs the length up front; without it the file is buffered (smaller cap, Worker memory).
+    let bytes = length
+    if (length > 0) {
+      const fixed = new FixedLengthStream(length)
+      void upstream.body.pipeTo(fixed.writable)
+      await env.BUCKET.put(key, fixed.readable, { httpMetadata: { contentType } })
+    } else {
+      const body = await upstream.arrayBuffer()
+      if (body.byteLength > 90 * 1024 * 1024) return json(413, { error: '這個伺服器沒有提供檔案大小，只能匯入 90 MB 以下的檔案' })
+      bytes = body.byteLength
+      await env.BUCKET.put(key, body, { httpMetadata: { contentType } })
+    }
+    return json(200, { key, url: r2Url(key), bytes, contentType, name: info.name })
   }
 
   if (path === '/list' && req.method === 'GET') {

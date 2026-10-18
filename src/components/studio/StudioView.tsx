@@ -1,4 +1,6 @@
 import { useDimDb } from '../../utils/dim'
+import { BottomSheet } from '../ui/BottomSheet'
+import { UrlImporter } from '../console/UrlImporter'
 import { useProjectLock } from '../../services/projectLock'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -519,6 +521,8 @@ export function StudioView({
   const [laneMenu, setLaneMenu] = useState<{ trackId: string; time: number; x: number; y: number } | null>(null)
   const laneUpload = useRef<HTMLInputElement>(null)
   const laneTarget = useRef<{ trackId: string; time: number } | null>(null)
+  // "From a link": a sound file's web address → placed on the track at the right-clicked time.
+  const [urlImport, setUrlImport] = useState(false)
   // A file dropped outside the timeline must not make the browser leave the page to open it.
   useEffect(() => {
     const stop = (e: DragEvent) => {
@@ -1555,6 +1559,11 @@ export function StudioView({
             setLaneMenu(null)
             laneUpload.current?.click()
           }}
+          onUrl={() => {
+            laneTarget.current = { trackId: laneMenu.trackId, time: laneMenu.time }
+            setLaneMenu(null)
+            setUrlImport(true)
+          }}
           onSeek={() => {
             seek(laneMenu.time)
             setLaneMenu(null)
@@ -1562,6 +1571,18 @@ export function StudioView({
           onClose={() => setLaneMenu(null)}
         />
       )}
+      <BottomSheet open={urlImport} onClose={() => setUrlImport(false)} title="🌐 從網址匯入音訊" subtitle="檔案連結（mp3 / wav / mp4…）· 影片會擷取音軌">
+        <UrlImporter
+          folder="theatre/daw/imported"
+          allowDirect={false}
+          audioOnly
+          onAudioFile={async (file) => {
+            const t = laneTarget.current
+            if (t) await uploadAndPlace([file], t.trackId, t.time)
+            setUrlImport(false)
+          }}
+        />
+      </BottomSheet>
       <input
         ref={laneUpload}
         type="file"

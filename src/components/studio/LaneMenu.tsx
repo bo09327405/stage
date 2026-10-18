@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { timecode } from '../../studio/format'
 
 /** Right-click menu on an empty part of a track lane: upload audio right there, or move the playhead. */
-export function LaneMenu({ x, y, time, trackName, onUpload, onSeek, onClose }: { x: number; y: number; time: number; trackName: string; onUpload: () => void; onSeek: () => void; onClose: () => void }) {
+export function LaneMenu({ x, y, time, trackName, onUpload, onUrl, onSeek, onClose }: { x: number; y: number; time: number; trackName: string; onUpload: () => void; onUrl?: () => void; onSeek: () => void; onClose: () => void }) {
   const box = useRef<HTMLDivElement>(null)
   // Registered once (latest onClose via a ref) and in the capture phase, so Esc always reaches it.
   const close = useRef(onClose)
@@ -41,6 +41,12 @@ export function LaneMenu({ x, y, time, trackName, onUpload, onSeek, onClose }: {
         <span className="text-[13px]">⇪ 上傳音檔到這裡…</span>
         <span className="text-[10px] text-white/40">選擇檔案，上傳到 R2 並放在這個時間點（可多選，依序排列）</span>
       </button>
+      {onUrl && (
+        <button type="button" role="menuitem" onClick={onUrl} className={item} data-lane-url>
+          <span className="text-[13px]">🌐 從網址匯入音訊…</span>
+          <span className="text-[10px] text-white/40">貼上 mp3 / wav / mp4 檔案連結，取得音訊並放在這個時間點</span>
+        </button>
+      )}
       <button type="button" role="menuitem" onClick={onSeek} className={item}>
         <span className="text-[13px]">▸ 播放頭移到這裡</span>
       </button>

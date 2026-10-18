@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["./*.ts", "../server/projectAccess.ts", "../server/notionCore.ts", "../server/ttsGoogleVoices.ts", "../src/types/notion.ts"]
+  "include": ["./*.ts", "../server/projectAccess.ts", "../server/notionCore.ts", "../server/ttsGoogleVoices.ts", "../src/types/notion.ts", "../src/utils/mediaUrl.ts"]
 }

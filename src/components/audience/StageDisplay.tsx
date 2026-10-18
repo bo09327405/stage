@@ -13,7 +13,10 @@ import {
   type ShowState,
 } from '../../types/cue'
 import type { ShowRef } from '../../types/project'
+import { dimGain } from '../../utils/dim'
+import { isYoutubeCue } from '../../utils/youtube'
 import { InteractiveUpload } from './InteractiveUpload'
+import { YouTubeCue } from './YouTubeCue'
 
 /**
  * Which visual instance owns this device's screen at `now`: the newest visual cue addressed to this
@@ -77,7 +80,7 @@ export function StageDisplay({
             animate={{ opacity: 1, transition: { duration: visual.cue.fadeInTime } }}
             exit={{ opacity: 0, transition: { duration: visual.cue.fadeOutTime } }}
           >
-            <VisualCue inst={visual} show={show} preview={preview && !previewSound} uploadMock={preview} now={now} frozen={showState.pausedAt != null} />
+            <VisualCue inst={visual} show={show} preview={preview && !previewSound} uploadMock={preview} now={now} frozen={showState.pausedAt != null} level={showState.muted ? 0 : (showState.masterVolume / 100) * dimGain(showState.dim, showState.dimDb)} audible={!preview || previewSound} />
           </motion.div>
         ) : audioOnly ? (
           <motion.div
@@ -109,7 +112,7 @@ export function StageDisplay({
   )
 }
 
-function VisualCue({ inst, show, preview, uploadMock, now, frozen }: { inst: ActiveCue; show: ShowRef; preview: boolean; uploadMock: boolean; now: number; frozen: boolean }) {
+function VisualCue({ inst, show, preview, uploadMock, now, frozen, level, audible }: { inst: ActiveCue; show: ShowRef; preview: boolean; uploadMock: boolean; now: number; frozen: boolean; level: number; audible: boolean }) {
   const { cue } = inst
   switch (cue.type) {
     case 'IMAGE':
@@ -130,6 +133,8 @@ function VisualCue({ inst, show, preview, uploadMock, now, frozen }: { inst: Act
         </div>
       )
     case 'VIDEO':
+      // A YouTube link plays in YouTube's embedded player (the audio engine can't carry it).
+      if (isYoutubeCue(cue)) return <YouTubeCue inst={inst} clock={instanceClock(inst, now)} paused={frozen || inst.pausedAt != null} level={level} audible={audible} />
       if (preview) return <PreviewVideo inst={inst} now={now} paused={frozen || inst.pausedAt != null} />
       // The audio engine owns the <video> element (so it stays gesture-unlocked); mount it here.
       return (

@@ -31,6 +31,11 @@ import { AfterStartPanel } from './AfterStartPanel'
 import { AudienceTargeting } from './AudienceTargeting'
 import { ChannelTargets } from './ChannelTargets'
 import { HapticEditor } from './HapticEditor'
+import { BottomSheet } from '../ui/BottomSheet'
+import { UrlImporter } from './UrlImporter'
+import { YouTubePreview } from './YouTubePreview'
+import { isYoutubeCue, youtubeIdOf, youtubeStartOf, youtubeWatchUrl } from '../../utils/youtube'
+import { recordProjectMedia, recordSharedMedia } from '../../services/mediaLibrary'
 import { InboxPickerModal } from './InboxPickerModal'
 import { StudioBinding } from './StudioBinding'
 import { WaveformTrimmer } from './WaveformTrimmer'
@@ -133,6 +138,7 @@ export function CueEditor({
   const [error, setError] = useState<string | null>(null)
   const [probing, setProbing] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   // Upload into this project's folder, or the shared Default folder every project can use.
   // The Default shared folder (R2) is managed by admins only.
   const admin = isAdmin(useAuth().user)
@@ -401,6 +407,42 @@ export function CueEditor({
                     }))
                   }
                 />
+                <button
+                  type="button"
+                  onClick={() => setImportOpen(true)}
+                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-line bg-white/[0.04] text-xs font-medium text-white/75 active:bg-white/10"
+                  data-url-import-open
+                >
+                  🌐 匯入網路影音（URL Import）
+                </button>
+                <BottomSheet open={importOpen} onClose={() => setImportOpen(false)} title="🌐 匯入網路影音" subtitle="檔案連結 · YouTube 串流">
+                <UrlImporter
+                  onYoutube={({ url, start }) =>
+                    setDraft((d) => ({ ...d, type: 'VIDEO', targetUrl: url, mediaStartTime: start, mediaEndTime: 0, title: d.title || 'YouTube 影片' }))
+                  }
+                  folder={uploadShared ? DEFAULT_MEDIA_FOLDER : cueMediaFolder(projectName, projectId)}
+                  onDirect={(url) => {
+                    set('targetUrl', url)
+                    void detectDuration(url)
+                  }}
+                  onStored={async ({ result, name }) => {
+                    const folder = uploadShared ? DEFAULT_MEDIA_FOLDER : cueMediaFolder(projectName, projectId)
+                    setDraft((d) => ({
+                      ...d,
+                      type: typeFromUpload(result),
+                      targetUrl: result.secure_url,
+                      duration: result.duration ? Math.round(result.duration * 100) / 100 : d.duration,
+                      mediaStartTime: 0,
+                      mediaEndTime: 0,
+                      title: d.title || name.replace(/\.[^.]+$/, ''),
+                    }))
+                    void probeMediaDuration(result.secure_url).then((s) => s != null && setDraft((d) => (d.targetUrl === result.secure_url ? { ...d, duration: Math.round(s * 100) / 100 } : d)))
+                    // Also list it in the project's (or Default) library, like an upload.
+                    const file = { name, size: result.bytes ?? 0, type: '' } as File
+                    await (uploadShared ? recordSharedMedia(result, file, 'link', folder) : recordProjectMedia(projectId, result, file, folder, 'link')).catch(() => {})
+                  }}
+                />
+                </BottomSheet>
                 <div>
                   <Label hint={probing ? '偵測長度中…' : undefined}>URL</Label>
                   <div className="flex gap-2">
@@ -413,6 +455,12 @@ export function CueEditor({
                       value={draft.targetUrl}
                       onChange={(e) => set('targetUrl', e.target.value)}
                       onBlur={(e) => {
+                        // A YouTube link is kept as a video cue played by YouTube's embedded player.
+                        const yt = youtubeIdOf(e.target.value)
+                        if (yt) {
+                          setDraft((d) => ({ ...d, type: 'VIDEO', targetUrl: youtubeWatchUrl(yt), mediaStartTime: youtubeStartOf(e.target.value) || d.mediaStartTime }))
+                          return
+                        }
                         // An R2 path / URL plays through this server's address, like picked files.
                         const url = normalizeMediaInput(e.target.value)
                         if (url !== draft.targetUrl) set('targetUrl', url)
@@ -465,7 +513,17 @@ export function CueEditor({
                 {studioMix.error ? `無法產生混音波形：${studioMix.error}` : '正在混音 Studio 專案以顯示波形…'}
               </p>
             )}
-            {media && waveUrl && (
+            {media && isYoutubeCue(draft) && (
+              <YouTubePreview
+                key={draft.targetUrl}
+                url={draft.targetUrl}
+                start={draft.mediaStartTime}
+                end={draft.mediaEndTime}
+                onTrim={(s, e) => setDraft((d) => ({ ...d, mediaStartTime: s, mediaEndTime: e }))}
+                onDuration={(d) => setDraft((prev) => (prev.duration === d ? prev : { ...prev, duration: d }))}
+              />
+            )}
+            {media && waveUrl && !isYoutubeCue(draft) && (
               <>
                 <div>
                   <Label hint="黃色把手裁剪 · 藍色把手拉淡入淡出">波形 · 裁剪 · Fades</Label>

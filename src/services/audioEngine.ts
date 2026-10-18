@@ -15,6 +15,7 @@ import {
 import { prepareStudioMix, studioMixUrl } from '../studio/cueMix'
 import type { FadeShape } from '../types/studio'
 import { fadeCurve } from '../utils/fadeCurve'
+import { isYoutubeCue } from '../utils/youtube'
 import { setNowPlaying, startBackgroundPlayback, startTicker } from './backgroundAudio'
 
 /**
@@ -365,11 +366,11 @@ export class StageAudioEngine {
     this.active = active
     if (!this.ctx) return
     this.paused = pausedAt != null
-    const playing = Object.values(active).find((d) => isMediaCue(d.cue) && d.stopAt == null && cueTargets(d.cue, this.audienceId, this.audienceChannel))
+    const playing = Object.values(active).find((d) => isMediaCue(d.cue) && !isYoutubeCue(d.cue) && d.stopAt == null && cueTargets(d.cue, this.audienceId, this.audienceChannel))
     setNowPlaying(playing?.cue.title ?? null)
 
     for (const inst of Object.values(active)) {
-      if (!isMediaCue(inst.cue) || !(inst.cue.targetUrl || inst.cue.studioId) || !cueTargets(inst.cue, this.audienceId, this.audienceChannel)) continue
+      if (!isMediaCue(inst.cue) || isYoutubeCue(inst.cue) || !(inst.cue.targetUrl || inst.cue.studioId) || !cueTargets(inst.cue, this.audienceId, this.audienceChannel)) continue
       const hold = this.paused || inst.pausedAt != null
       const voice = this.voices.get(inst.instanceId)
       if (!voice) {
