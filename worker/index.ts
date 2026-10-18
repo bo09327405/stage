@@ -51,10 +51,10 @@ function corsHeaders(req: Request, env: Env, open = false): Headers {
   const origin = req.headers.get('origin')
   const allowed = env.ALLOWED_ORIGINS.split(',').map((s) => s.trim())
   if (open) h.set('access-control-allow-origin', '*')
-  else if (origin && allowed.includes(origin)) {
-    h.set('access-control-allow-origin', origin)
-    h.set('vary', 'Origin')
-  }
+  else if (origin && allowed.includes(origin)) h.set('access-control-allow-origin', origin)
+  // Always: a copy cached for a request without an Origin (a plain <img>) must not be reused for a CORS request
+  // (the canvas / WebGL editors), or the picture would load for one and fail for the other.
+  if (!open) h.set('vary', 'Origin')
   h.set('access-control-allow-methods', 'GET, HEAD, POST, OPTIONS')
   h.set('access-control-allow-headers', 'Authorization, Content-Type, Range, If-None-Match, If-Modified-Since')
   h.set('access-control-expose-headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Type, ETag')

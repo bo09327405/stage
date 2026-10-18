@@ -7,7 +7,7 @@ const MAX_SIDE = 1600
  * Magic Object Eraser: paint over what should disappear (dust, a wire, a prop, a stray mark); the area is filled in
  * from its surroundings. The result is saved as a new picture — the original file stays untouched and can be restored.
  */
-export function MagicEraser({ src, onDone, onClose }: { src: string; onDone: (png: Blob) => Promise<void>; onClose: () => void }) {
+export function MagicEraser({ src, mode = 'inpaint', onDone, onClose }: { src: string; /** 'mask': don't fill, hand back the painted area as a black-and-white mask (used for video: it is filled live, frame by frame). */ mode?: 'inpaint' | 'mask'; onDone: (png: Blob) => Promise<void>; onClose: () => void }) {
   const stage = useRef<HTMLCanvasElement>(null)
   const paint = useRef<HTMLCanvasElement>(null)
   const imageRef = useRef<HTMLImageElement | null>(null)
@@ -75,7 +75,19 @@ export function MagicEraser({ src, onDone, onClose }: { src: string; onDone: (pn
       ctx.drawImage(img, 0, 0, size.w, size.h)
       const pic = ctx.getImageData(0, 0, size.w, size.h)
       const strokes = paint.current.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, size.w, size.h)
-      ctx.putImageData(inpaint(pic, maskFromPaint(strokes, 2)), 0, 0)
+      if (mode === 'mask') {
+        // White where painted (grown a little so the fill covers the edge), black elsewhere.
+        const m = maskFromPaint(strokes, 4)
+        const out = ctx.createImageData(size.w, size.h)
+        for (let i = 0; i < size.w * size.h; i++) {
+          const v = m[i] ? 255 : 0
+          out.data[i * 4] = out.data[i * 4 + 1] = out.data[i * 4 + 2] = v
+          out.data[i * 4 + 3] = 255
+        }
+        ctx.putImageData(out, 0, 0)
+      } else {
+        ctx.putImageData(inpaint(pic, maskFromPaint(strokes, 2)), 0, 0)
+      }
       const blob = await new Promise<Blob>((resolve, reject) => work.toBlob((b) => (b ? resolve(b) : reject(new Error('無法產生圖片'))), 'image/png'))
       await onDone(blob)
       onClose()
@@ -88,7 +100,7 @@ export function MagicEraser({ src, onDone, onClose }: { src: string; onDone: (pn
 
   return (
     <div className="space-y-3" data-magic-eraser>
-      <p className="text-xs leading-relaxed text-white/55">用手指或滑鼠把不要的東西塗紅，按「擦除」就會用周圍的畫面填補。適合灰塵、電線、小道具、雜訊與文字；很大的物體填補後會比較模糊。</p>
+      <p className="text-xs leading-relaxed text-white/55">{mode === 'mask' ? '在這個畫面上，把要消除的固定位置塗紅（例如浮水印、標誌、電線）。播放時，每一格畫面都會即時用周圍的內容補起來，影片檔不會被修改。只適合不會移動的小範圍。' : '用手指或滑鼠把不要的東西塗紅，按「擦除」就會用周圍的畫面填補。適合灰塵、電線、小道具、雜訊與文字；很大的物體填補後會比較模糊。'}</p>
       <div className="relative mx-auto w-full overflow-hidden rounded-xl bg-black" style={{ aspectRatio: size.w && size.h ? `${size.w} / ${size.h}` : '16 / 9', maxHeight: '55dvh' }}>
         <canvas ref={stage} className="absolute inset-0 h-full w-full" />
         <canvas
@@ -133,7 +145,7 @@ export function MagicEraser({ src, onDone, onClose }: { src: string; onDone: (pn
           取消
         </button>
         <button type="button" disabled={!painted || busy} onClick={() => void apply()} className="min-h-12 rounded-xl bg-accent text-sm font-bold text-white disabled:opacity-40" data-eraser-apply>
-          {busy ? '處理中…' : '擦除'}
+          {busy ? '處理中…' : mode === 'mask' ? '儲存修補範圍' : '擦除'}
         </button>
       </div>
     </div>

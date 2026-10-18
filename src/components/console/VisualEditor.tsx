@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { autoEnhance, loadImage, removeBackground } from '../../services/imageTools'
+import { useEffect, useMemo, useState } from 'react'
+import { autoEnhance, grabVideoFrame, loadImage, removeBackground } from '../../services/imageTools'
 import type { StoredFile } from '../../services/storage'
 import type { Cue } from '../../types/cue'
 import {
@@ -59,6 +59,8 @@ export function VisualEditor({ draft, onChange, saveFile }: { draft: Draft; onCh
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [eraser, setEraser] = useState(false)
+  const [heal, setHeal] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
   const [showGlobal, setShowGlobal] = useState(false)
 
   // Back to "no visual settings" when nothing is changed any more.
@@ -122,16 +124,17 @@ export function VisualEditor({ draft, onChange, saveFile }: { draft: Draft; onCh
       replaceSource(result.secure_url)
     })
 
+  // Auto Enhance measures the picture — for a video, a frame from its middle.
   const enhance = () =>
     run('enhance', async () => {
-      const img = await loadImage(targetSrc)
-      patchTarget({ adjust: autoEnhance(img) })
+      patchTarget({ adjust: autoEnhance(isVideo ? (await grabVideoFrame(targetSrc, undefined, 160)).canvas : await loadImage(targetSrc)) })
     })
 
   return (
     <div className="space-y-4" data-visual-editor>
       <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-line bg-black">
-        <LayeredStage cue={draft as unknown as Cue} visual={visual} mode="editor" />
+        <LayeredStage cue={draft as unknown as Cue} visual={visual} mode="editor" onError={setPreviewError} />
+        {previewError && <div className="absolute inset-x-3 bottom-3 rounded-lg bg-black/80 p-2 text-center text-xs text-standby" data-preview-error>預覽無法顯示：{previewError}</div>}
         {busy && <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-sm text-white/80">{{ add: '上傳中…', cutout: 'AI 去背中…（第一次需下載模型）', enhance: '分析畫面…' }[busy] ?? '處理中…'}</div>}
       </div>
       <p className="text-[11px] leading-relaxed text-white/35">所有設定只記錄在 Cue 裡，原始檔案不會被修改；GPU 即時繪製，舞台預覽與觀眾端畫面一致。</p>
@@ -340,15 +343,38 @@ export function VisualEditor({ draft, onChange, saveFile }: { draft: Draft; onCh
           </details>
 
           {/* AI / retouch tools */}
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" disabled={!!busy || isVideo || !targetSrc} onClick={() => void cutout()} className="min-h-11 rounded-xl bg-accent/20 text-xs font-semibold text-[#64a8ff] disabled:opacity-40" data-ai-cutout title={isVideo ? '目前只支援圖片' : undefined}>
-              ✂ AI 魔法去背
-            </button>
-            <button type="button" disabled={!!busy || isVideo || !targetSrc} onClick={() => setEraser(true)} className="min-h-11 rounded-xl bg-accent/20 text-xs font-semibold text-[#64a8ff] disabled:opacity-40" data-open-eraser>
-              🧽 魔法橡皮擦
-            </button>
-          </div>
-          {isVideo && <p className="text-[11px] text-white/35">AI 去背與橡皮擦目前只支援圖片；影片請先在外部處理，或用帶透明背景的影片／圖片當圖層。</p>}
+          {isVideo ? (
+            <div className="space-y-2" data-video-tools>
+              <button
+                type="button"
+                onClick={() => patchTarget({ cutout: !target.cutout })}
+                aria-pressed={target.cutout}
+                className={`flex min-h-12 w-full items-center justify-between rounded-xl border px-3 text-left text-sm font-semibold ${target.cutout ? 'border-accent bg-accent/15 text-white' : 'border-line text-white/70'}`}
+                data-video-cutout
+              >
+                <span>✂ 即時 AI 去背（人像）</span>
+                <span className="text-xs">{target.cutout ? '開啟' : '關閉'}</span>
+              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" disabled={!!busy || !targetSrc} onClick={() => setHeal(true)} className="min-h-11 rounded-xl bg-accent/20 text-xs font-semibold text-[#64a8ff] disabled:opacity-40" data-open-heal>
+                  🧽 區域修補{target.heal ? '（已設定）' : ''}
+                </button>
+                <button type="button" disabled={!target.heal} onClick={() => patchTarget({ heal: '' })} className="min-h-11 rounded-xl bg-white/[0.06] text-xs text-white/70 disabled:opacity-40">
+                  清除修補
+                </button>
+              </div>
+              <p className="text-[11px] leading-relaxed text-white/35">影片的去背與修補是播放時在每台裝置上即時運算（人像去背每秒約 20 次、手機較耗電）；影片檔不會被修改。修補只適合固定位置的小範圍，例如標誌或電線。</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" disabled={!!busy || !targetSrc} onClick={() => void cutout()} className="min-h-11 rounded-xl bg-accent/20 text-xs font-semibold text-[#64a8ff] disabled:opacity-40" data-ai-cutout>
+                ✂ AI 魔法去背
+              </button>
+              <button type="button" disabled={!!busy || !targetSrc} onClick={() => setEraser(true)} className="min-h-11 rounded-xl bg-accent/20 text-xs font-semibold text-[#64a8ff] disabled:opacity-40" data-open-eraser>
+                🧽 魔法橡皮擦
+              </button>
+            </div>
+          )}
           {(isBase ? visual.base.originalSrc : layer?.originalSrc) && (
             <button type="button" onClick={() => patchTarget({ src: isBase ? '' : (layer?.originalSrc ?? ''), originalSrc: '' })} className="min-h-10 w-full rounded-lg bg-white/10 text-xs font-semibold text-white/75" data-restore-original>
               ↩ 還原成原圖（取消去背／擦除）
@@ -356,7 +382,7 @@ export function VisualEditor({ draft, onChange, saveFile }: { draft: Draft; onCh
           )}
           {layer?.kind === 'media' && (
             <div className="grid grid-cols-1 gap-2">
-              <button type="button" onClick={() => void enhance()} disabled={!!busy || isVideo} className="min-h-10 rounded-lg bg-white/[0.06] text-xs text-white/70 disabled:opacity-40">
+              <button type="button" onClick={() => void enhance()} disabled={!!busy} className="min-h-10 rounded-lg bg-white/[0.06] text-xs text-white/70 disabled:opacity-40">
                 ✨ 這一層：智慧平衡
               </button>
             </div>
@@ -390,6 +416,18 @@ export function VisualEditor({ draft, onChange, saveFile }: { draft: Draft; onCh
         </button>
       )}
 
+      <BottomSheet open={heal} onClose={() => setHeal(false)} title="🧽 影片區域修補" subtitle="在一格畫面上塗出要消除的固定位置">
+        {heal && targetSrc && (
+          <VideoHeal
+            src={targetSrc}
+            onClose={() => setHeal(false)}
+            onDone={async (png) => {
+              const result = await saveFile(new File([png], `heal-${Date.now().toString(36)}.png`, { type: 'image/png' }))
+              patchTarget({ heal: result.secure_url })
+            }}
+          />
+        )}
+      </BottomSheet>
       <BottomSheet open={eraser} onClose={() => setEraser(false)} title="🧽 魔法橡皮擦" subtitle="塗抹要移除的東西">
         {eraser && targetSrc && (
           <MagicEraser
@@ -402,6 +440,42 @@ export function VisualEditor({ draft, onChange, saveFile }: { draft: Draft; onCh
           />
         )}
       </BottomSheet>
+    </div>
+  )
+}
+
+/** Pick a frame of the video, then paint the fixed spot to fill in (stored as a mask picture). */
+function VideoHeal({ src, onDone, onClose }: { src: string; onDone: (png: Blob) => Promise<void>; onClose: () => void }) {
+  const [frame, setFrame] = useState<string | null>(null)
+  const [duration, setDuration] = useState(0)
+  const [time, setTime] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    setFrame(null)
+    grabVideoFrame(src, time ?? undefined)
+      .then(({ canvas, duration: d }) => {
+        if (!alive) return
+        setDuration(d)
+        setFrame(canvas.toDataURL('image/jpeg', 0.92))
+      })
+      .catch((err: Error) => alive && setError(err.message))
+    return () => {
+      alive = false
+    }
+  }, [src, time])
+
+  if (error) return <p className="text-xs text-panic">{error}</p>
+  return (
+    <div className="space-y-3">
+      {duration > 0 && (
+        <label className="flex items-center gap-3 text-xs text-white/55">
+          畫面時間
+          <input type="range" min={0} max={Math.max(0.1, duration)} step={0.1} defaultValue={duration / 2} onPointerUp={(e) => setTime(Number((e.target as HTMLInputElement).value))} onKeyUp={(e) => setTime(Number((e.target as HTMLInputElement).value))} className="h-8 flex-1 accent-[#0a84ff]" />
+        </label>
+      )}
+      {frame ? <MagicEraser key={frame} src={frame} mode="mask" onDone={onDone} onClose={onClose} /> : <p className="py-8 text-center text-sm text-white/45">讀取影片畫面中…</p>}
     </div>
   )
 }

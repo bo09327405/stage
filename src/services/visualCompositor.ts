@@ -28,6 +28,12 @@ export interface RenderLayer {
   rotation: number
   mask: LayerMask | null
   adjust: Adjustments
+  /** Live cut-out matte (red channel = how much of the picture is the person), same framing as the picture. */
+  matte?: TexImageSource | null
+  matteKey?: string
+  /** Heal mask image (red channel > 0 = fill in from the surroundings). */
+  heal?: TexImageSource | null
+  healKey?: string
 }
 
 export interface RenderSpec {
@@ -88,6 +94,34 @@ uniform float uInvert;
 uniform vec2 uPolyA[8];
 uniform vec2 uPolyB[8];
 uniform int uPolyN;
+uniform sampler2D uMatte;
+uniform sampler2D uHeal;
+uniform float uMatteOn;
+uniform float uHealOn;
+uniform float uAspect;
+
+vec3 healColor(vec2 lu, vec3 own) {
+  float h = texture2D(uHeal, lu).r;
+  if (h < 0.02) return own;
+  vec3 acc = vec3(0.0);
+  float wsum = 0.0;
+  // Rings of samples around the pixel, out to about 0.22 of the picture height: far enough to leave a mask
+  // of a few dozen pixels; the ones outside the mask are averaged, nearer rings counting more.
+  for (int ring = 0; ring < 6; ring++) {
+    float r = 0.02 + float(ring) * 0.04;
+    float near = 1.0 / (1.0 + float(ring) * 0.5);
+    for (int i = 0; i < 10; i++) {
+      float a = float(i) * 0.6283 + float(ring) * 0.31;
+      vec2 s = lu + vec2(cos(a) * r / uAspect, sin(a) * r);
+      float hm = texture2D(uHeal, s).r;
+      float w = (1.0 - step(0.2, hm)) * near;
+      acc += texture2D(uTex, clamp(s, 0.0, 1.0)).rgb * w;
+      wsum += w;
+    }
+  }
+  vec3 fill = wsum > 0.5 ? acc / wsum : own;
+  return mix(own, fill, smoothstep(0.1, 0.6, h));
+}
 
 vec3 blendRGB(int mode, vec3 b, vec3 s) {
   if (mode == 1) return b * s;
@@ -154,8 +188,10 @@ void main() {
   vec2 lu = q / uBox + 0.5;
   float inside = step(0.0, lu.x) * step(lu.x, 1.0) * step(0.0, lu.y) * step(lu.y, 1.0);
   vec4 src = uSolid > 0.5 ? vec4(uColor, 1.0) : texture2D(uTex, clamp(lu, 0.0, 1.0));
+  if (uHealOn > 0.5) src.rgb = healColor(clamp(lu, 0.0, 1.0), src.rgb);
   vec3 c = adjustColor(src.rgb, uAdjA, uAdjB);
   float a = src.a * uOpacity * inside * maskAlpha(lu);
+  if (uMatteOn > 0.5) a *= texture2D(uMatte, clamp(lu, 0.0, 1.0)).r;
   vec3 res = blendRGB(uBlend, back.rgb, c);
   gl_FragColor = vec4(mix(back.rgb, res, a), 1.0);
 }
@@ -297,7 +333,7 @@ export class Compositor {
       e.preventDefault()
       this.lost = true
     })
-    this.layerProg = this.link(LAYER_FRAG, ['uBack', 'uTex', 'uCanvasAspect', 'uCenter', 'uBox', 'uAngle', 'uOpacity', 'uBlend', 'uSolid', 'uColor', 'uAdjA', 'uAdjB', 'uMaskType', 'uMaskA', 'uMaskB', 'uFeather', 'uInvert', 'uPolyA', 'uPolyB', 'uPolyN'])
+    this.layerProg = this.link(LAYER_FRAG, ['uBack', 'uTex', 'uCanvasAspect', 'uCenter', 'uBox', 'uAngle', 'uOpacity', 'uBlend', 'uSolid', 'uColor', 'uAdjA', 'uAdjB', 'uMaskType', 'uMaskA', 'uMaskB', 'uFeather', 'uInvert', 'uPolyA', 'uPolyB', 'uPolyN', 'uMatte', 'uHeal', 'uMatteOn', 'uHealOn', 'uAspect'])
     this.finalProg = this.link(FINAL_FRAG, ['uImg', 'uRes', 'uTime', 'uAdjA', 'uAdjB', 'uFxA', 'uGlitch'])
     this.buffer = gl.createBuffer()!
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer)
@@ -440,6 +476,26 @@ export class Compositor {
       gl.bindTexture(gl.TEXTURE_2D, this.targets[ping].tex)
       gl.uniform1i(u.uBack, 0)
       gl.uniform1i(u.uTex, 1)
+      gl.uniform1i(u.uMatte, 2)
+      gl.uniform1i(u.uHeal, 3)
+      // Optional per-layer extras: the live cut-out matte (updated every frame) and the heal mask (static).
+      const extra = (unit: number, key: string | undefined, source: TexImageSource | null | undefined, dynamic: boolean) => {
+        if (!key || !source) return 0
+        // Upload on its own unit: texture() binds on the active one and must not disturb the backdrop on unit 0.
+        gl.activeTexture(gl.TEXTURE0 + unit)
+        const entry = this.texture({ ...layer, key, source, width: 1, height: 1, dynamic })
+        if (entry.failed) return 0
+        gl.bindTexture(gl.TEXTURE_2D, entry.tex)
+        return 1
+      }
+      const matteOn = extra(2, layer.matteKey, layer.matte, true)
+      const healOn = extra(3, layer.healKey, layer.heal, false)
+      if (matteOn) keep.add(layer.matteKey!)
+      if (healOn) keep.add(layer.healKey!)
+      gl.uniform1f(u.uMatteOn, matteOn)
+      gl.uniform1f(u.uHealOn, healOn)
+      gl.uniform1f(u.uAspect, ar)
+      gl.activeTexture(gl.TEXTURE0)
       gl.uniform1f(u.uCanvasAspect, aspect)
       gl.uniform2f(u.uCenter, layer.x, 1 - layer.y)
       // The layer fits the stage ("contain") at scale 1; sizes are in units of the stage height.

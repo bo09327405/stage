@@ -57,7 +57,7 @@ export function autoEnhanceFromPixels(data: Uint8ClampedArray | Uint8Array): Adj
   }
 }
 
-export function autoEnhance(img: HTMLImageElement | HTMLVideoElement): Adjustments {
+export function autoEnhance(img: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement): Adjustments {
   const canvas = document.createElement('canvas')
   canvas.width = 96
   canvas.height = 96
@@ -273,4 +273,32 @@ export async function removeBackground(img: HTMLImageElement, maxSide = 1600): P
   for (let i = 0; i < w * h; i++) pic.data[i * 4 + 3] = a[i * 4 + 3]
   ctx.putImageData(pic, 0, 0)
   return await new Promise<Blob>((resolve, reject) => out.toBlob((b) => (b ? resolve(b) : reject(new Error('無法產生去背圖片'))), 'image/png'))
+}
+
+/** One frame of a video (at `time` seconds, default the middle) as a canvas, at most `maxSide` pixels on the long edge. */
+export function grabVideoFrame(url: string, time?: number, maxSide = 1280): Promise<{ canvas: HTMLCanvasElement; duration: number }> {
+  return new Promise((resolve, reject) => {
+    const v = document.createElement('video')
+    v.crossOrigin = 'anonymous'
+    v.muted = true
+    v.playsInline = true
+    v.preload = 'auto'
+    const fail = () => reject(new Error('無法讀取這支影片的畫面（網址失效，或對方網站不允許跨網站讀取）'))
+    v.onerror = fail
+    v.onloadedmetadata = () => {
+      const target = time ?? (Number.isFinite(v.duration) ? v.duration / 2 : 0)
+      v.onseeked = () => {
+        const k = Math.min(1, maxSide / Math.max(v.videoWidth, v.videoHeight))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(v.videoWidth * k))
+        canvas.height = Math.max(1, Math.round(v.videoHeight * k))
+        canvas.getContext('2d')!.drawImage(v, 0, 0, canvas.width, canvas.height)
+        resolve({ canvas, duration: Number.isFinite(v.duration) ? v.duration : 0 })
+        v.removeAttribute('src')
+        v.load()
+      }
+      v.currentTime = Math.max(0, Math.min(target, (Number.isFinite(v.duration) ? v.duration : target) - 0.05))
+    }
+    v.src = url
+  })
 }

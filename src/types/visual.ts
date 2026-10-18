@@ -138,6 +138,10 @@ export interface VisualLayer {
   rotation: number
   mask: LayerMask | null
   adjust: Adjustments
+  /** Video: live AI cut-out of the person (re-computed on the device for every frame). */
+  cutout: boolean
+  /** Video: address of a painted mask (white = fill in from the surroundings, e.g. a logo or a wire); '' = none. */
+  heal: string
 }
 
 /** The cue's own media, as the bottom layer: same controls, but no source of its own (unless edited). */
@@ -165,6 +169,8 @@ export const newBase = (): BaseLayer => ({
   rotation: 0,
   mask: null,
   adjust: { ...NO_ADJUST },
+  cutout: false,
+  heal: '',
 })
 
 export const newVisual = (): CueVisual => ({ base: newBase(), layers: [], adjust: { ...NO_ADJUST }, fx: { ...NO_FX } })
@@ -188,6 +194,8 @@ export function newLayer(kind: 'media' | 'color', init: Partial<VisualLayer> = {
     rotation: 0,
     mask: null,
     adjust: { ...NO_ADJUST },
+    cutout: false,
+    heal: '',
     ...init,
   }
 }
@@ -239,6 +247,8 @@ function normalizeLayerCommon(raw: Partial<VisualLayer> | undefined) {
     rotation: num(raw?.rotation, 0, -360, 360),
     mask: normalizeMask(raw?.mask),
     adjust: adj(raw?.adjust),
+    cutout: raw?.cutout === true,
+    heal: typeof raw?.heal === 'string' ? raw.heal : '',
   }
 }
 
@@ -270,6 +280,8 @@ export function hasVisualEdits(v: CueVisual | null | undefined): v is CueVisual 
     adjusted(v.adjust) ||
     fxOn(v.fx) ||
     !!b.src ||
+    b.cutout ||
+    !!b.heal ||
     !!b.mask ||
     b.opacity < 1 ||
     b.blend !== 'normal' ||
