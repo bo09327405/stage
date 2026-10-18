@@ -72,6 +72,8 @@ export default defineConfig(({ mode, command }) => {
         apiSecret: env.CLOUDINARY_API_SECRET,
       }),
     ],
+    // ffmpeg.wasm starts its own Web Worker from the package: it must not be pre-bundled.
+    optimizeDeps: { exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'] },
     server: {
       // Self-signed LAN cert (.cert/) so iPad Safari gets a secure context for the microphone.
       https: existsSync('.cert/key.pem') ? { key: readFileSync('.cert/key.pem'), cert: readFileSync('.cert/cert.pem') } : undefined,

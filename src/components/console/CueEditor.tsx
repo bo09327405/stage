@@ -32,7 +32,9 @@ import { AudienceTargeting } from './AudienceTargeting'
 import { ChannelTargets } from './ChannelTargets'
 import { HapticEditor } from './HapticEditor'
 import { BottomSheet } from '../ui/BottomSheet'
+import { MediaConverter } from './MediaConverter'
 import { UrlImporter } from './UrlImporter'
+import { uploadMediaFile } from '../../services/storage'
 import { YouTubePreview } from './YouTubePreview'
 import { isYoutubeCue, youtubeIdOf, youtubeStartOf, youtubeWatchUrl } from '../../utils/youtube'
 import { recordProjectMedia, recordSharedMedia } from '../../services/mediaLibrary'
@@ -139,6 +141,7 @@ export function CueEditor({
   const [probing, setProbing] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [convertOpen, setConvertOpen] = useState(false)
   // Upload into this project's folder, or the shared Default folder every project can use.
   // The Default shared folder (R2) is managed by admins only.
   const admin = isAdmin(useAuth().user)
@@ -415,6 +418,38 @@ export function CueEditor({
                 >
                   🌐 匯入網路影音（URL Import）
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setConvertOpen(true)}
+                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-line bg-white/[0.04] text-xs font-medium text-white/75 active:bg-white/10"
+                  data-convert-open
+                >
+                  🛠 轉檔工具（本機檔案 → MP3 / WAV / MP4）
+                </button>
+                <BottomSheet open={convertOpen} onClose={() => setConvertOpen(false)} title="🛠 轉檔工具" subtitle="在你的裝置上轉檔，不用安裝任何軟體">
+                  <MediaConverter
+                    onConverted={async (files) => {
+                      const folder = uploadShared ? DEFAULT_MEDIA_FOLDER : cueMediaFolder(projectName, projectId)
+                      let first = true
+                      for (const file of files) {
+                        const result = await uploadMediaFile(file, folder)
+                        await (uploadShared ? recordSharedMedia(result, file, 'link', folder) : recordProjectMedia(projectId, result, file, folder, 'link')).catch(() => {})
+                        if (first) {
+                          first = false
+                          setDraft((d) => ({
+                            ...d,
+                            type: typeFromUpload(result),
+                            targetUrl: result.secure_url,
+                            duration: result.duration ? Math.round(result.duration * 100) / 100 : d.duration,
+                            mediaStartTime: 0,
+                            mediaEndTime: 0,
+                            title: d.title || file.name.replace(/\.[^.]+$/, ''),
+                          }))
+                        }
+                      }
+                    }}
+                  />
+                </BottomSheet>
                 <BottomSheet open={importOpen} onClose={() => setImportOpen(false)} title="🌐 匯入網路影音" subtitle="檔案連結 · YouTube 串流">
                 <UrlImporter
                   onYoutube={({ url, start }) =>
