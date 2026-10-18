@@ -1,4 +1,4 @@
-import { activeStartAt, cueRunLength, type ActiveCue, type Cue } from '../types/cue'
+import { activeStartAt, cueRunLength, segmentLength, type ActiveCue, type Cue } from '../types/cue'
 import { fadeRamp } from '../types/studio'
 
 /** The YouTube video id a pasted link names (watch / youtu.be / embed / shorts / live), or null. */
@@ -119,3 +119,20 @@ export function youtubeEnvelope(inst: ActiveCue, clock: number): number {
   return clamp01(g)
 }
 
+
+/** Where in the video (seconds) this cue should be at `clock`: trim start + time since it started, wrapped when looping. */
+export function youtubePosition(inst: ActiveCue, clock: number): number {
+  const { cue } = inst
+  const elapsed = Math.max(0, clock - activeStartAt(inst)) / 1000
+  const segment = segmentLength(cue)
+  const into = cue.loop && Number.isFinite(segment) && segment > 0 ? elapsed % segment : elapsed
+  return cue.mediaStartTime + into
+}
+
+/** Player states of the IFrame API. */
+export const YT_STATE = { UNSTARTED: -1, ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3, CUED: 5 } as const
+
+/** The browser refused autoplay when this many start attempts over this long have not produced playback. */
+export const BLOCKED_ATTEMPTS = 3
+export const BLOCKED_AFTER_MS = 2200
+export const isAutoplayBlocked = (attempts: number, msSinceFirstAttempt: number) => attempts >= BLOCKED_ATTEMPTS && msSinceFirstAttempt >= BLOCKED_AFTER_MS
