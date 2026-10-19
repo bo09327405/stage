@@ -54,6 +54,15 @@ export interface YTPlayer {
   getPlayerState(): number
   destroy(): void
 }
+/** YouTube IFrame API error codes → what it means for the operator. */
+export function youtubeErrorMessage(code: number): string {
+  if (code === 101 || code === 150) return '這部影片的作者不允許嵌入播放（錯誤 ' + code + '）：請換一部影片，或改用你有權使用的檔案上傳'
+  if (code === 100) return '找不到這部影片（已移除或設為私人，錯誤 100）'
+  if (code === 2) return '影片網址不正確（錯誤 2）'
+  if (code === 5) return '這台裝置的播放器無法播放這部影片（錯誤 5，HTML5 播放器問題）'
+  return `這部影片無法嵌入播放（錯誤 ${code}）`
+}
+
 export interface YTNamespace {
   Player: new (
     el: HTMLElement,
@@ -63,7 +72,7 @@ export interface YTNamespace {
       width?: string | number
       height?: string | number
       playerVars?: Record<string, string | number>
-      events?: { onReady?: (e: { target: YTPlayer }) => void; onStateChange?: (e: { data: number; target: YTPlayer }) => void; onError?: (e: { data: number }) => void }
+      events?: { onReady?: (e: { target: YTPlayer }) => void; onStateChange?: (e: { data: number; target: YTPlayer }) => void; onError?: (e: { data: number; target: YTPlayer }) => void }
     },
   ) => YTPlayer
   PlayerState: { UNSTARTED: -1; ENDED: 0; PLAYING: 1; PAUSED: 2; BUFFERING: 3; CUED: 5 }

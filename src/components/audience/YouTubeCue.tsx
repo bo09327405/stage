@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ActiveCue } from '../../types/cue'
-import { YT_HOST, YT_PLAYER_VARS, YT_STATE, isAutoplayBlocked, loadYouTubeApi, youtubeEnvelope, youtubeIdOf, youtubePosition, type YTPlayer } from '../../utils/youtube'
+import { YT_HOST, YT_PLAYER_VARS, YT_STATE, isAutoplayBlocked, loadYouTubeApi, youtubeEnvelope, youtubeErrorMessage, youtubeIdOf, youtubePosition, type YTPlayer } from '../../utils/youtube'
 
 /**
  * A YouTube link played with YouTube's official embedded player (IFrame Player API), kept in step with the show
@@ -40,6 +40,8 @@ export function YouTubeCue({
   const [blocked, setBlocked] = useState(false)
   const [needsSound, setNeedsSound] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Shown only while stuck: what the player reports, so a phone that won't start can be diagnosed.
+  const [debug, setDebug] = useState('')
   useEffect(() => {
     latest.current = { inst, clock, paused, level, audible }
   })
@@ -134,11 +136,15 @@ export function YouTubeCue({
                 setPhase((ph) => (ph === 'playing' && e.data === YT_STATE.ENDED ? 'playing' : 'waiting'))
               }
             },
-            onError: () => setError('這部影片無法嵌入播放（可能被作者限制、已移除或設為私人）'),
+            onError: (e) => setError(youtubeErrorMessage(e.data)),
           },
         })
         playerRef.current = player
-        timer = window.setInterval(() => sync(YT), 250)
+        timer = window.setInterval(() => {
+          sync(YT)
+          const p = playerRef.current
+          setDebug(p && ready.current ? `ready · state ${p.getPlayerState()} · 嘗試 ${attempts} 次` : '播放器載入中')
+        }, 250)
       })
       .catch((err: Error) => alive && setError(err.message))
 
@@ -176,6 +182,7 @@ export function YouTubeCue({
       <div ref={host} className={`aspect-video max-h-full w-full [&_iframe]:h-full [&_iframe]:w-full ${tapUnblock ? '' : '[&_iframe]:pointer-events-none'}`} />
       {error && <p className="absolute inset-x-4 top-1/2 -translate-y-1/2 rounded-xl bg-black/80 p-3 text-center text-sm text-white/70">{error}</p>}
       {!error && phase === 'loading' && <span className="pointer-events-none absolute bottom-3 text-[11px] text-white/35">載入播放器…</span>}
+      {!error && phase !== 'playing' && <span className="pointer-events-none absolute bottom-1 left-2 font-mono text-[9px] text-white/25" data-youtube-debug>YT {debug}</span>}
       {!error && tapUnblock && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/30" data-youtube-overlay>
           <button
