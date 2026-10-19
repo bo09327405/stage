@@ -1,0 +1,13 @@
+{
+  "name": "theatre-cue-companion",
+  "version": "1.0.0",
+  "description": "Local media companion for Theatre Cue: converts audio / video files on this computer with ffmpeg and reports progress to the web app.",
+  "type": "module",
+  "bin": { "theatre-cue-companion": "./server.mjs" },
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "license": "MIT"
+}
