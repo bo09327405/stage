@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { db } from '../services/firebase'
 import { clampDimDb } from '../utils/dim'
 import { planVibrationPush } from '../services/vibrationPush'
-import { normalizeChannels, type Announcement, type ChannelConfig } from '../types/channels'
+import { channelScopeCovers, normalizeChannels, type Announcement, type ChannelConfig } from '../types/channels'
 import type { ExecutorRun, SeqCue } from '../types/sequence'
 import { normalizeMix, type VjMix } from '../types/vj'
 import {
@@ -192,6 +192,8 @@ export function useTheatreEngine(role: EngineRole, { basePath, cues = [] }: Engi
       }
       for (const other of Object.values(stateRef.current.active)) {
         if (other.stopAt != null) continue
+        // A cue for Ch 1 only acts on cues inside Ch 1; only a cue for everybody acts across groups.
+        if (!channelScopeCovers(cue.targetChannels, other.cue.targetChannels)) continue
         const path = `active/${other.instanceId}`
         if (cue.stopOthers !== 'none') {
           updates[`${path}/stopAt`] = serverTimestamp()

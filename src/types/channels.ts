@@ -59,3 +59,16 @@ export interface Announcement {
 /** Does a cue / announcement aimed at `targets` reach a device in `channel` (null = not grouped)? */
 export const reachesChannel = (targets: readonly string[] | undefined, channel: string | null) =>
   !channel || !targets || targets.length === 0 || targets.includes(TARGET_ALL) || targets.includes(CHANNEL_ALL) || targets.includes(channel)
+
+/** Is this cue target list "everybody" (no group restriction)? */
+export const targetsAllChannels = (targets: readonly string[] | undefined) =>
+  !targets || targets.length === 0 || targets.includes(TARGET_ALL) || targets.includes(CHANNEL_ALL)
+
+/**
+ * May an action of a cue aimed at `actor` (STOP OTHERS, fade on next GO, a new picture replacing the old one)
+ * touch a running cue aimed at `other`? A cue for everybody reaches every group; a cue for specific groups
+ * only reaches cues that play entirely inside those groups — never another group's cue, and never a cue
+ * that is also running for groups outside its own.
+ */
+export const channelScopeCovers = (actor: readonly string[] | undefined, other: readonly string[] | undefined) =>
+  targetsAllChannels(actor) || (!targetsAllChannels(other) && (other as readonly string[]).every((c) => (actor as readonly string[]).includes(c)))

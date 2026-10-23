@@ -369,6 +369,12 @@ export class StageAudioEngine {
     const playing = Object.values(active).find((d) => isMediaCue(d.cue) && !isYoutubeCue(d.cue) && d.stopAt == null && cueTargets(d.cue, this.audienceId, this.audienceChannel))
     setNowPlaying(playing?.cue.title ?? null)
 
+    // A voice whose cue no longer reaches this device (the Stage's simulated group or audience was switched,
+    // or the device changed group) goes silent at once — skipping it below is not enough to stop it.
+    for (const [id, voice] of this.voices) {
+      if (active[id] && !cueTargets(voice.inst.cue, this.audienceId, this.audienceChannel)) this.stopVoice(id, CUT_FADE)
+    }
+
     for (const inst of Object.values(active)) {
       if (!isMediaCue(inst.cue) || isYoutubeCue(inst.cue) || !(inst.cue.targetUrl || inst.cue.studioId) || !cueTargets(inst.cue, this.audienceId, this.audienceChannel)) continue
       const hold = this.paused || inst.pausedAt != null
