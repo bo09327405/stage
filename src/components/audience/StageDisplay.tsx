@@ -20,6 +20,7 @@ import { InteractiveUpload } from './InteractiveUpload'
 import { YouTubeCue } from './YouTubeCue'
 import { LayeredStage } from './LayeredStage'
 import { hasVisualEdits } from '../../types/visual'
+import { VjStage } from '../vj/VjStage'
 
 /**
  * Which visual instance owns this device's screen at `now`: the newest visual cue addressed to this
@@ -70,7 +71,12 @@ export function StageDisplay({
   const liveNow = useServerNow(serverNow, instances.length > 0 && showState.pausedAt == null, 100)
   const now = showClock(showState, liveNow)
   const visual = visibleVisual(instances, now)
-  const audioOnly = !visual && instances.some((a) => a.cue.type === 'AUDIO' && a.stopAt == null)
+  // The live VJ mix owns the screen whenever no visual cue is up (a cue always takes priority).
+  const liveVj = !visual && showState.vj?.live ? showState.vj : null
+  const audioOnly = !visual && !liveVj && instances.some((a) => a.cue.type === 'AUDIO' && a.stopAt == null)
+  const [vjFailed, setVjFailed] = useState(false)
+  const vjClock = () => (showState.pausedAt != null ? showState.pausedAt : serverNow())
+  const vjLevel = showState.muted ? 0 : (showState.masterVolume / 100) * dimGain(showState.dim, showState.dimDb)
 
   return (
     <div className="relative h-full">
@@ -83,7 +89,11 @@ export function StageDisplay({
             animate={{ opacity: 1, transition: { duration: visual.cue.fadeInTime } }}
             exit={{ opacity: 0, transition: { duration: visual.cue.fadeOutTime } }}
           >
-            <VisualCue inst={visual} show={show} preview={preview && !previewSound} uploadMock={preview} now={now} frozen={showState.pausedAt != null} level={showState.muted ? 0 : (showState.masterVolume / 100) * dimGain(showState.dim, showState.dimDb)} audible={!preview || previewSound} />
+            <VisualCue serverNow={serverNow} inst={visual} show={show} preview={preview && !previewSound} uploadMock={preview} now={now} frozen={showState.pausedAt != null} level={showState.muted ? 0 : (showState.masterVolume / 100) * dimGain(showState.dim, showState.dimDb)} audible={!preview || previewSound} />
+          </motion.div>
+        ) : liveVj && !vjFailed ? (
+          <motion.div key="live-vj" className="absolute inset-0" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <VjStage mix={liveVj} clock={vjClock} mode={preview && !previewSound ? 'preview' : 'audience'} paused={showState.pausedAt != null} level={vjLevel} onError={() => setVjFailed(true)} />
           </motion.div>
         ) : audioOnly ? (
           <motion.div
@@ -99,7 +109,7 @@ export function StageDisplay({
               ))}
             </div>
           </motion.div>
-        ) : instances.length === 0 ? (
+        ) : instances.length === 0 && !liveVj ? (
           <motion.div
             key="idle"
             className={`absolute inset-0 flex items-center justify-center tracking-[0.3em] text-white/25 ${preview ? 'text-[11px]' : 'text-sm'}`}
@@ -115,10 +125,16 @@ export function StageDisplay({
   )
 }
 
-function VisualCue({ inst, show, preview, uploadMock, now, frozen, level, audible }: { inst: ActiveCue; show: ShowRef; preview: boolean; uploadMock: boolean; now: number; frozen: boolean; level: number; audible: boolean }) {
+function VisualCue({ inst, show, preview, uploadMock, now, frozen, level, audible, serverNow }: { serverNow: () => number; inst: ActiveCue; show: ShowRef; preview: boolean; uploadMock: boolean; now: number; frozen: boolean; level: number; audible: boolean }) {
   const { cue } = inst
   // Layers / masks / grading / effects: composited on the GPU. Falls back to the plain picture if WebGL is missing.
   const [layerFailed, setLayerFailed] = useState(false)
+  if (cue.type === 'VJ' && cue.vj && !layerFailed) {
+    // Clips start when the cue does; the clock stands still while the show (or this cue) is paused.
+    const frozenAt = inst.pausedAt ?? null
+    const clock = () => (frozen ? now : frozenAt != null ? Math.min(frozenAt, serverNow()) : serverNow())
+    return <VjStage mix={cue.vj} clock={clock} origin={activeStartAt(inst)} mode={uploadMock ? 'preview' : 'audience'} paused={frozen || inst.pausedAt != null} level={level} onError={() => setLayerFailed(true)} />
+  }
   if ((cue.type === 'IMAGE' || cue.type === 'VIDEO') && hasVisualEdits(cue.visual) && !layerFailed && !isYoutubeCue(cue)) {
     const elapsed = Math.max(0, instanceClock(inst, now) - activeStartAt(inst)) / 1000
     return <LayeredStage cue={cue} visual={cue.visual} mode={uploadMock ? 'preview' : 'audience'} position={cue.mediaStartTime + elapsed} paused={frozen || inst.pausedAt != null} onError={() => setLayerFailed(true)} />

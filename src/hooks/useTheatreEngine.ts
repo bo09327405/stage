@@ -5,6 +5,7 @@ import { clampDimDb } from '../utils/dim'
 import { planVibrationPush } from '../services/vibrationPush'
 import { normalizeChannels, type Announcement, type ChannelConfig } from '../types/channels'
 import type { ExecutorRun, SeqCue } from '../types/sequence'
+import { normalizeMix, type VjMix } from '../types/vj'
 import {
   DEFAULT_SHOW_FX,
   INITIAL_SHOW_STATE,
@@ -65,6 +66,7 @@ function normalizeShowState(raw: Record<string, unknown> | null): ShowState {
     execLevels: state.execLevels ?? {},
     channels: normalizeChannels(state.channels),
     announce: state.announce?.id ? state.announce : null,
+    vj: normalizeMix(state.vj),
   }
 }
 
@@ -373,6 +375,15 @@ export function useTheatreEngine(role: EngineRole, { basePath, cues = [] }: Engi
     (patch: Partial<ShowFx>) => {
       assertConsole('setFx')
       liveWrite(Object.fromEntries(Object.entries(patch).map(([k, v]) => [`fx/${k}`, v])))
+    },
+    [assertConsole, liveWrite],
+  )
+
+  /** Live VJ mix (clips, layer faders, effects) shown on every audience device; written in throttled batches. */
+  const setVj = useCallback(
+    (mix: VjMix) => {
+      assertConsole('setVj')
+      liveWrite({ vj: mix })
     },
     [assertConsole, liveWrite],
   )
@@ -731,6 +742,7 @@ export function useTheatreEngine(role: EngineRole, { basePath, cues = [] }: Engi
     setDimDb,
     fireHit,
     setFx,
+    setVj,
     setHitLevel,
     manualXfade,
     execFire,

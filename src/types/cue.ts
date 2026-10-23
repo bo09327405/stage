@@ -4,8 +4,9 @@ import type { FadeShape } from './studio'
 import { normalizeVisual, type CueVisual } from './visual'
 import type { ExecutorRun } from './sequence'
 import type { CueTrigger } from './trigger'
+import { normalizeMix, type VjMix } from './vj'
 
-export type CueType = 'AUDIO' | 'VIDEO' | 'IMAGE' | 'TEXT' | 'INTERACTIVE_UPLOAD' | 'BLACKOUT' | 'VIBRATION'
+export type CueType = 'AUDIO' | 'VIDEO' | 'IMAGE' | 'TEXT' | 'INTERACTIVE_UPLOAD' | 'BLACKOUT' | 'VIBRATION' | 'VJ'
 
 export const CUE_TYPE_LABELS: Record<CueType, string> = {
   AUDIO: '音訊',
@@ -15,6 +16,7 @@ export const CUE_TYPE_LABELS: Record<CueType, string> = {
   INTERACTIVE_UPLOAD: '互動上傳',
   BLACKOUT: '暗場',
   VIBRATION: '震動提示',
+  VJ: 'VJ 剪輯觸發',
 }
 
 /** Compact glyphs for list rows and type pickers. */
@@ -26,6 +28,7 @@ export const CUE_TYPE_GLYPHS: Record<CueType, string> = {
   INTERACTIVE_UPLOAD: '⇪',
   BLACKOUT: '●',
   VIBRATION: '📳',
+  VJ: '🎬',
 }
 
 export type UploadKind = 'photo' | 'audio' | 'both' | 'video' | 'any'
@@ -109,6 +112,8 @@ export interface Cue {
   fadeInShape: FadeShape
   /** IMAGE / VIDEO: layers, masks, colour grading and effects (non-destructive); null = plain media. */
   visual: CueVisual | null
+  /** VJ: the clips, layer mix, crossfader and effects this cue puts on stage (a snapshot of the VJ deck state). */
+  vj: VjMix | null
   // — Vibration (type VIBRATION; also the Pre-Wait reminder of any cue) —
   /** How many pulses. */
   vibrationCount: number
@@ -182,6 +187,7 @@ export const DEFAULT_CUE: Omit<Cue, 'id'> = {
   fadeInTime: 0,
   fadeInShape: 'linear',
   visual: null,
+  vj: null,
   vibrationCount: 3,
   vibrationDuration: 500,
   vibrationInterval: 200,
@@ -224,6 +230,7 @@ export function normalizeCue(raw: Omit<Partial<Cue>, 'stopOthers'> & LegacyCueFi
     // RTDB drops empty arrays and may hand back arrays as objects.
     targetIds: Object.values(rest.targetIds ?? {}),
     visual: normalizeVisual(rest.visual),
+    vj: normalizeMix(rest.vj),
     // RTDB drops empty arrays: a cue with no stored list is for every group.
     targetChannels: (Object.values(rest.targetChannels ?? {}) as string[]).length ? (Object.values(rest.targetChannels ?? {}) as string[]) : ['all'],
     triggers: Object.values(rest.triggers ?? {}),
@@ -385,6 +392,8 @@ export interface ShowState {
   channels: ChannelConfig
   /** The latest operator announcement to the audience. */
   announce: Announcement | null
+  /** Live VJ performance (types/vj.ts): on stage while `live` and no visual cue is up; null = off. */
+  vj: VjMix | null
 }
 
 /** Show-wide effects: EQ (dB), low-pass cutoff (0–1, log 20 Hz–20 kHz; 1 = open), reverb / delay sends (0–1), pan (−1…1). */
@@ -426,6 +435,7 @@ export const INITIAL_SHOW_STATE: ShowState = {
   execLevels: {},
   channels: DEFAULT_CHANNELS,
   announce: null,
+  vj: null,
 }
 
 export function playbackState(state: ShowState): PlaybackState {

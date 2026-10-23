@@ -30,6 +30,7 @@ import { TriggerMatchEditor } from '../ui/TriggerMatchEditor'
 import { AfterStartPanel } from './AfterStartPanel'
 import { AudienceTargeting } from './AudienceTargeting'
 import { ChannelTargets } from './ChannelTargets'
+import { VjCueEditor } from '../vj/VjCueEditor'
 import { HapticEditor } from './HapticEditor'
 import { BottomSheet } from '../ui/BottomSheet'
 import { MediaConverter } from './MediaConverter'
@@ -76,7 +77,7 @@ function stableStringify(value: unknown): string {
 }
 type TabId = 'basic' | 'media' | 'visual' | 'start' | 'after' | 'target' | 'triggers'
 
-const TYPES: CueType[] = ['AUDIO', 'VIDEO', 'IMAGE', 'TEXT', 'INTERACTIVE_UPLOAD', 'BLACKOUT', 'VIBRATION']
+const TYPES: CueType[] = ['AUDIO', 'VIDEO', 'IMAGE', 'TEXT', 'INTERACTIVE_UPLOAD', 'BLACKOUT', 'VIBRATION', 'VJ']
 const UPLOAD_ACCEPT: Partial<Record<CueType, string>> = {
   AUDIO: 'audio/*',
   VIDEO: 'video/*',
@@ -245,7 +246,7 @@ export function CueEditor({
           onChange={setTab}
           tabs={[
             { id: 'basic', label: '基本' },
-            { id: 'media', label: '媒體' },
+            { id: 'media', label: draft.type === 'VJ' ? 'VJ 混音' : '媒體' },
             ...(draft.type === 'IMAGE' || (draft.type === 'VIDEO' && !isYoutubeCue(draft)) ? [{ id: 'visual' as const, label: draft.visual ? '視覺 ●' : '視覺' }] : []),
             { id: 'start', label: '開始時' },
             { id: 'after', label: '開始後' },
@@ -343,7 +344,9 @@ export function CueEditor({
           </>
         )}
 
-        {tab === 'media' && (
+        {tab === 'media' && draft.type === 'VJ' && <VjCueEditor projectId={projectId} value={draft.vj} onChange={(vj) => set('vj', vj)} />}
+
+        {tab === 'media' && draft.type !== 'VJ' && (
           <>
             {draft.type === 'AUDIO' && (
               <div className="grid grid-cols-2 gap-1 rounded-lg bg-black/40 p-1" role="group" aria-label="音訊來源" data-audio-source>

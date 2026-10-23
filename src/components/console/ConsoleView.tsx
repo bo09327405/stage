@@ -44,6 +44,9 @@ import { AudienceTalkGate } from '../intercom/AudienceTalkGate'
 import { IntercomContext } from '../intercom/intercomContext'
 import { ActivityDot } from '../triggers/ActivityDot'
 import { GlobalTriggersPanel } from '../triggers/GlobalTriggersPanel'
+import { VjDeckPanel } from '../vj/VjDeckPanel'
+import { useVjController } from '../../hooks/useVjController'
+import { useVjDecks } from '../../services/vjDecks'
 import { SurfaceWorkspace } from '../surface/SurfaceWorkspace'
 import { ControlSidebar } from './ControlSidebar'
 import { MediaPool } from './MediaPool'
@@ -128,6 +131,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   const [selectMode, setSelectMode] = useState(false)
   const [savingAs, setSavingAs] = useState(false)
   const [triggersOpen, setTriggersOpen] = useState(false)
+  const [vjOpen, setVjOpen] = useState(false)
   // Full control mode (surface fills the page) and the collapsible editor column.
   const [controlMode, setControlMode] = useState(() => readPref('theatre.consoleControlMode') === '1')
   const [inspectorOpen, setInspectorOpen] = useState(() => readPref('theatre.consoleInspectorOpen') !== '0')
@@ -199,6 +203,9 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   const [intercomOpen, setIntercomOpen] = useState(false)
   const router = useTriggerRouter({ show, basePath, label: `控台 · ${versionName}`, engine, cues, hits })
   const { uploads } = useProjectUploads(show.projectId)
+  const vjDecks = useVjDecks(show.projectId)
+  // Mounted for the whole console session so MIDI / OSC keeps driving the VJ mix with the panel closed.
+  const vj = useVjController({ projectId: show.projectId, engine, decks: vjDecks, inputEnabled: router.isHost })
   const [rightTab, setRightTab] = useState<'editor' | 'inbox'>('inbox')
   // Count of uploads already seen in the inbox, for the "+n new" badge.
   const [seenCount, setSeenCount] = useState<number | null>(null)
@@ -433,6 +440,15 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
           <StudioMenu show={show} user={user} readOnly={lock.readOnly} />
           <IntercomButton intercom={intercom} onClick={() => setIntercomOpen(!intercomOpen)} />
           <button
+            onClick={() => setVjOpen(true)}
+            className="flex min-h-10 items-center gap-1.5 rounded-lg bg-white/[0.06] px-3 text-xs text-white/70 hover:bg-white/10 hover:text-white"
+            title="VJ Deck：素材格、多圖層混音、特效與 MIDI 對應"
+            data-vj-open
+          >
+            🎬<span className="hidden sm:inline">VJ</span>
+            <span className={`h-1.5 w-1.5 rounded-full ${vj.mix.live ? 'bg-panic' : 'bg-white/25'}`} />
+          </button>
+          <button
             onClick={() => setTriggersOpen(true)}
             className="flex min-h-10 items-center gap-1.5 rounded-lg bg-white/[0.06] px-3 text-xs text-white/70 hover:bg-white/10 hover:text-white"
             title={router.isHost ? '此分頁負責執行外部觸發' : `外部觸發由「${router.host?.label ?? '—'}」執行`}
@@ -578,6 +594,9 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
         <CallFlash intercom={intercom} />
         <AudienceTalkGate intercom={intercom} />
 
+        <AnimatePresence>
+          {vjOpen && <VjDeckPanel projectId={show.projectId} projectName={projectName} decks={vjDecks} ctl={vj} engine={engine} onClose={() => setVjOpen(false)} />}
+        </AnimatePresence>
         <AnimatePresence>
           {triggersOpen && <GlobalTriggersPanel projectId={show.projectId} router={router} onClose={() => setTriggersOpen(false)} />}
         </AnimatePresence>

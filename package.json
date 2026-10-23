@@ -14,7 +14,8 @@
     "osc": "node osc-server.js",
     "rules:build": "node scripts/build-rules.mjs",
     "tts:setup": "node scripts/setup-tts.mjs",
-    "companion": "node companion-tool/server.mjs"
+    "companion": "node companion-tool/server.mjs",
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",
