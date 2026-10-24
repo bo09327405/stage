@@ -84,6 +84,13 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
   const [hapticNote, setHapticNote] = useState<string | null>(null)
   const [blocked, setBlocked] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  // The show fills the screen; one tap on it brings up the tools (ID, group, tests, alerts) for a few seconds.
+  const [menu, setMenu] = useState(false)
+  useEffect(() => {
+    if (!menu) return
+    const timer = window.setTimeout(() => setMenu(false), 10_000)
+    return () => window.clearTimeout(timer)
+  }, [menu])
 
   useEffect(() => {
     stageAudio.onBlocked = setBlocked
@@ -231,7 +238,9 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
   return (
     <>
       {entered ? (
-        <StageDisplay showState={showState} serverNow={serverNow} audienceId={audienceId} audienceChannel={channel} show={show} />
+        <div className="h-full w-full" onClick={() => setMenu((m) => !m)} data-audience-stage>
+          <StageDisplay showState={showState} serverNow={serverNow} audienceId={audienceId} audienceChannel={channel} show={show} />
+        </div>
       ) : (
         <div role="button" tabIndex={0} onClick={handleEnter} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleEnter()} className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-6">
           <span className="text-sm tracking-[0.4em] text-white/50">THEATRE</span>
@@ -242,17 +251,17 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
         </div>
       )}
 
-      {entered && (
+      {entered && menu && (
         <div className="pointer-events-none absolute top-[max(0.75rem,env(safe-area-inset-top))] left-3">
           <AudienceCode code={audienceId} />
         </div>
       )}
-      {entered && groupBadge && (
+      {entered && menu && groupBadge && (
         <div className="pointer-events-none absolute inset-x-0 top-[max(2.75rem,calc(env(safe-area-inset-top)+2rem))] flex justify-center px-3">{groupBadge}</div>
       )}
 
       {/* Connection light: green = live; amber = reconnecting (Firebase retries on its own) */}
-      {entered && (
+      {entered && menu && (
         <span
           className={`pointer-events-none absolute top-[max(0.9rem,env(safe-area-inset-top))] right-12 flex items-center gap-1.5 text-[10px] ${connected ? 'text-go/80' : 'text-standby'}`}
           data-audience-connection={connected ? 'online' : 'offline'}
@@ -263,7 +272,7 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
       )}
 
       {/* Haptic self-test: shows which mechanism this phone really has */}
-      {entered && (
+      {entered && menu && (
         <div className="absolute right-3 bottom-[max(4.5rem,calc(env(safe-area-inset-bottom)+3.5rem))] flex flex-col items-end gap-1">
           <button
             type="button"
@@ -282,14 +291,14 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
           {hapticNote && <span className="max-w-[16rem] rounded-lg bg-black/70 px-2 py-1 text-right text-[10px] text-white/70">{hapticNote}</span>}
         </div>
       )}
-      {entered && voice.connected && (
+      {entered && menu && voice.connected && (
         <span className="pointer-events-none absolute inset-x-0 bottom-[max(4.5rem,calc(env(safe-area-inset-bottom)+3.5rem))] mx-auto w-fit rounded-full bg-black/60 px-3 py-1 text-[11px] text-white/60 backdrop-blur" data-audience-voice="connected">
           🎙 現場語音已連線（只收聽）
         </span>
       )}
 
       {/* Background alerts (notification + vibration while the page is hidden / phone locked) */}
-      {entered && (pushState === 'off' || pushState === 'on' || pushState === 'needs-install') && (
+      {entered && menu && (pushState === 'off' || pushState === 'on' || pushState === 'needs-install') && (
         <div className="absolute inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-1 px-4">
           {pushState === 'needs-install' ? (
             <p className="max-w-xs rounded-lg bg-black/60 px-3 py-2 text-center text-[11px] leading-relaxed text-white/50">🔔 想在鎖屏時也收到震動通知：Safari「分享 → 加入主畫面」後，從主畫面開啟（iOS 16.4+）</p>
@@ -338,7 +347,7 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
         </button>
       )}
 
-      {entered && canFullscreen && !isFullscreen && (
+      {entered && menu && canFullscreen && !isFullscreen && (
         <button
           onClick={enterFullscreen}
           className="absolute top-3 right-3 rounded px-2 py-1 text-xs text-white/30 hover:text-white/70"
