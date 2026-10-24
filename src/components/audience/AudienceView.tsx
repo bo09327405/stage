@@ -188,6 +188,7 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
       // No speech support; announcements still chime and show.
     }
     setEntered(true)
+    setMenu(true) // show the tools (group / switch) briefly so people know where they are
     enterFullscreen()
     requestWakeLock()
   }
@@ -255,6 +256,9 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
         <div className="pointer-events-none absolute top-[max(0.75rem,env(safe-area-inset-top))] left-3">
           <AudienceCode code={audienceId} />
         </div>
+      )}
+      {entered && menu && (
+        <p className="pointer-events-none absolute inset-x-0 bottom-[max(0.5rem,env(safe-area-inset-bottom))] text-center text-[10px] text-white/30">再點一下螢幕可收起選單</p>
       )}
       {entered && menu && groupBadge && (
         <div className="pointer-events-none absolute inset-x-0 top-[max(2.75rem,calc(env(safe-area-inset-top)+2rem))] flex justify-center px-3">{groupBadge}</div>
