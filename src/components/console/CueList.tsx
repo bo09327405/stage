@@ -24,6 +24,8 @@ interface CueListProps {
   showChannels?: boolean
   /** Phone edit mode: a tap ticks the cue (for batch edit / delete) instead of selecting it. */
   selectMode?: boolean
+  /** Console edit mode. On: a click opens the cue in the editor. Off: a click puts it on standby. Unset keeps the per-device default. */
+  editMode?: boolean
   onStandby: (cue: Cue) => void
   /** Swipe-left tray: delete this cue (the caller confirms). */
   onDelete?: (cue: Cue) => void
@@ -52,6 +54,7 @@ export function CueList({
   onCheckedChange,
   onSelect,
   selectMode,
+  editMode,
   showChannels,
   onStandby,
   onDelete,
@@ -151,8 +154,8 @@ export function CueList({
                 if (e.metaKey || e.ctrlKey) toggle(id, false)
                 else if (e.shiftKey) toggle(id, true)
                 else if (selectMode) toggle(id, false)
-                else if (coarse) onStandby(cue)
-                else onSelect(cue)
+                else if (editMode ?? !coarse) onSelect(cue)
+                else onStandby(cue)
               }}
               onCheck={(range) => toggle(id, range)}
               onStandby={() => onStandby(cue)}

@@ -129,6 +129,9 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   const [channelSettingsOpen, setChannelSettingsOpen] = useState(false)
   const [announceOpen, setAnnounceOpen] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
+  // Edit mode: only then does clicking a cue open it in the editor; otherwise a click selects it (standby).
+  const [editMode, setEditMode] = useState(() => readPref('theatre.consoleEditMode') === '1')
+  useEffect(() => writePref('theatre.consoleEditMode', editMode ? '1' : '0'), [editMode])
   const [savingAs, setSavingAs] = useState(false)
   const [triggersOpen, setTriggersOpen] = useState(false)
   const [vjOpen, setVjOpen] = useState(false)
@@ -717,6 +720,14 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                   </button>
                 )}
                 <button
+                  onClick={() => setEditMode((v) => !v)}
+                  aria-pressed={editMode}
+                  title={editMode ? '編輯模式：點 Cue 會開啟編輯器（再按一次關閉）' : '點 Cue 只會選取待命；開啟編輯模式後才能編輯'}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition pointer-coarse:min-h-10 ${editMode ? 'bg-accent text-white' : 'bg-white/[0.07] text-white/80 hover:bg-white/[0.12]'}`}
+                >
+                  ✎ 編輯模式{editMode ? '：開' : ''}
+                </button>
+                <button
                   onClick={() => openEditor({ mode: 'create' })}
                   className="rounded-lg bg-white/[0.07] px-3 py-1.5 text-xs font-medium text-white/80 transition hover:bg-accent hover:text-white pointer-coarse:min-h-10"
                 >
@@ -768,8 +779,9 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                   running={running}
                   now={now}
                   standbyId={standbyCue?.id ?? null}
-                  selectedId={editingCue?.id ?? null}
+                  selectedId={editMode ? (editingCue?.id ?? null) : null}
                   selectMode={compact && selectMode}
+                  editMode={editMode}
                   onSelect={(cue) => openEditor({ mode: 'edit', cueId: cue.id })}
                   onStandby={(cue) => engine.standby(cue).catch(ignore)}
                   onDelete={(cue) => {
