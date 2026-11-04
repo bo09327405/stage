@@ -129,9 +129,8 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   const [channelSettingsOpen, setChannelSettingsOpen] = useState(false)
   const [announceOpen, setAnnounceOpen] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
-  // Edit mode: only then does clicking a cue open it in the editor; otherwise a click selects it (standby).
-  const [editMode, setEditMode] = useState(() => readPref('theatre.consoleEditMode') === '1')
-  useEffect(() => writePref('theatre.consoleEditMode', editMode ? '1' : '0'), [editMode])
+  // Edit mode: only then does clicking a cue open it in the editor; otherwise a click selects it (standby). Always starts off on load.
+  const [editMode, setEditMode] = useState(false)
   const [savingAs, setSavingAs] = useState(false)
   const [triggersOpen, setTriggersOpen] = useState(false)
   const [vjOpen, setVjOpen] = useState(false)
@@ -213,7 +212,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   // Count of uploads already seen in the inbox, for the "+n new" badge.
   const [seenCount, setSeenCount] = useState<number | null>(null)
   const inboxCount = uploads?.length ?? 0
-  const unseen = rightTab === 'inbox' || seenCount == null ? 0 : Math.max(0, inboxCount - seenCount)
+  const unseen = rightTab === 'inbox' || !editMode || seenCount == null ? 0 : Math.max(0, inboxCount - seenCount)
   if (uploads && seenCount == null) setSeenCount(uploads.length)
 
   // Window commands from control-panel buttons. In full control mode the control panel owns its
@@ -239,6 +238,8 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   const openEditor = (state: EditorState) => {
     setEditor(state)
     if (state) {
+      // Opening the editor by any route (new cue, tray "編輯") turns edit mode on, so the editor never shows outside it.
+      setEditMode(true)
       switchRightTab('editor')
       setMobileSheet(true)
       // Picking a cue to edit brings the collapsed editor back.
@@ -720,7 +721,10 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                   </button>
                 )}
                 <button
-                  onClick={() => setEditMode((v) => !v)}
+                  onClick={() => {
+                    if (editMode && editor?.mode === 'edit') setEditor(null)
+                    setEditMode((v) => !v)
+                  }}
                   aria-pressed={editMode}
                   title={editMode ? '編輯模式：點 Cue 會開啟編輯器（再按一次關閉）' : '點 Cue 只會選取待命；開啟編輯模式後才能編輯'}
                   className={`rounded-lg px-3 py-1.5 text-xs font-medium transition pointer-coarse:min-h-10 ${editMode ? 'bg-accent text-white' : 'bg-white/[0.07] text-white/80 hover:bg-white/[0.12]'}`}
@@ -817,10 +821,10 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
             <button
               onClick={() => setInspector(true)}
               className="flex min-h-12 items-center justify-center gap-2 border-t border-line bg-panel/50 text-xs text-white/55 hover:bg-white/[0.06] hover:text-white lg:min-h-0 lg:flex-col lg:border-t-0 lg:border-l lg:py-4"
-              title="展開 Cue 編輯區"
+              title={editMode ? '展開 Cue 編輯區' : '展開收件匣'}
             >
               <span className="text-base">‹</span>
-              <span className="lg:[writing-mode:vertical-rl]">展開編輯區{unseen > 0 ? ` · 收件匣 +${unseen}` : ''}</span>
+              <span className="lg:[writing-mode:vertical-rl]">{editMode ? '展開編輯區' : '展開收件匣'}{unseen > 0 ? ` · 收件匣 +${unseen}` : ''}</span>
             </button>
           ) : (
           <>
@@ -852,14 +856,16 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                   } else setInspector(false)
                 }}
                 className="flex min-h-10 w-9 shrink-0 items-center justify-center rounded-lg text-white/45 hover:bg-white/10 hover:text-white"
-                title="收合編輯區"
-                aria-label="收合編輯區"
+                title={editMode ? '收合編輯區' : '收合收件匣'}
+                aria-label={editMode ? '收合編輯區' : '收合收件匣'}
               >
                 ›
               </button>
-              <RightTab active={rightTab === 'editor'} onClick={() => switchRightTab('editor')}>
-                ✎ Cue 編輯
-              </RightTab>
+              {editMode && (
+                <RightTab active={rightTab === 'editor'} onClick={() => switchRightTab('editor')}>
+                  ✎ Cue 編輯
+                </RightTab>
+              )}
               <RightTab active={rightTab === 'inbox'} onClick={() => switchRightTab('inbox')}>
                 📥 收件匣
                 <span className="ml-1.5 font-mono text-[11px] opacity-60">{inboxCount}</span>
@@ -871,7 +877,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
 
             <div className="relative min-h-0 flex-1">
               <AnimatePresence mode="wait">
-                {rightTab === 'inbox' ? (
+                {rightTab === 'inbox' || !editMode ? (
                   <motion.div
                     // Re-mount when an interactive cue fires so the inbox jumps to its uploads.
                     key={`inbox-${latestInteractive?.id ?? 'all'}`}
