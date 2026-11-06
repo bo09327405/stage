@@ -744,7 +744,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
               {compact && (
                 <div
                   className="sticky z-20 shrink-0 self-start border-r border-line bg-[#151517]"
-                  style={{ top: `calc(150px + ${barInset})`, height: `calc(100dvh - 150px - ${barInset} - 5rem - env(safe-area-inset-bottom, 0px))` }}
+                  style={{ top: `calc(176px + ${barInset})`, height: `calc(100dvh - 176px - ${barInset} - 5rem - env(safe-area-inset-bottom, 0px))` }}
                 >
                   <MobileSideRail
                     effective={showState.masterVolume * dimGain(showState.dim, showState.dim ? clampDimDb(showState.dimDb ?? DEFAULT_DIM_DB) : consoleDimDb)}
@@ -827,7 +827,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
           <aside
             className={
               compact
-                ? 'fixed inset-x-0 bottom-0 z-[70] flex h-[86dvh] flex-col overflow-hidden rounded-t-3xl border border-b-0 border-line bg-[#0b0b0d] pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-20px_60px_-20px_rgba(0,0,0,0.9)]'
+                ? 'fixed inset-x-0 bottom-0 z-[70] flex h-[92dvh] flex-col overflow-hidden rounded-t-3xl border border-b-0 border-line bg-[#0b0b0d] pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-20px_60px_-20px_rgba(0,0,0,0.9)]'
                 : 'relative flex min-h-[520px] shrink-0 flex-col border-t border-line bg-panel/50 backdrop-blur-xl lg:min-h-0 lg:border-t-0 lg:border-l'
             }
             data-mobile-sheet={compact || undefined}

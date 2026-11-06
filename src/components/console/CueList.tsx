@@ -405,7 +405,7 @@ function CueRow({
         />
         {/* Touch: round number badge (green = playing, orange = selected / next GO, red = idle) */}
         <span
-          className={`hidden h-9 min-w-9 shrink-0 items-center justify-center self-start rounded-full px-1 text-lg font-bold text-white pointer-coarse:flex ${
+          className={`hidden h-11 min-w-11 shrink-0 items-center justify-center self-start rounded-full px-1 text-xl font-bold text-white pointer-coarse:flex ${
             instance ? 'bg-[#1fae45]' : isStandby ? 'bg-[#f5a623]' : 'bg-[#d92e27]'
           }`}
           title={cue.type}
