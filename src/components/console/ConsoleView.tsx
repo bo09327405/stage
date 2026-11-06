@@ -21,6 +21,7 @@ import { useHits } from '../../hooks/useHits'
 import { useServerNow } from '../../hooks/useServerNow'
 import { useTheatreEngine } from '../../hooks/useTheatreEngine'
 import { usePresence } from '../../services/presence'
+import { useLiveDirector } from '../../hooks/useLiveDirector'
 import { recheckModeration, setUploadHidden, setUploadModeration, useProjectUploads } from '../../services/uploads'
 import { cueFromUpload } from '../../utils/uploadCue'
 import { saveAsNewVersion, setLivePointer, touchProject, useLivePointer } from '../../services/projects'
@@ -123,13 +124,13 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   const presence = usePresence(basePath)
   const live = useLivePointer()
   const [editor, setEditor] = useState<EditorState>(null)
-  // Phone / portrait iPad: Go Button layout (GO bar on top, DIM + Master rail, editor as a full-screen sheet).
+  // Phone / portrait iPad: Go Button layout (GO bar on top, DIM + Master rail, inbox as a full-screen sheet).
   const compact = useGoButtonLayout()
   const [mobileSheet, setMobileSheet] = useState(false)
   const [channelSettingsOpen, setChannelSettingsOpen] = useState(false)
   const [announceOpen, setAnnounceOpen] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
-  // Edit mode: only then does clicking a cue open it in the editor; otherwise a click selects it (standby). Always starts off on load.
+  // Edit button: only while on does clicking a cue pop up the editor window; otherwise a click selects it (standby). Always starts off on load.
   const [editMode, setEditMode] = useState(false)
   const [savingAs, setSavingAs] = useState(false)
   const [triggersOpen, setTriggersOpen] = useState(false)
@@ -208,12 +209,13 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   const vjDecks = useVjDecks(show.projectId)
   // Mounted for the whole console session so MIDI / OSC keeps driving the VJ mix with the panel closed.
   const vj = useVjController({ projectId: show.projectId, engine, decks: vjDecks, inputEnabled: router.isHost })
-  const [rightTab, setRightTab] = useState<'editor' | 'inbox'>('inbox')
   // Count of uploads already seen in the inbox, for the "+n new" badge.
   const [seenCount, setSeenCount] = useState<number | null>(null)
   const inboxCount = uploads?.length ?? 0
-  const unseen = rightTab === 'inbox' || !editMode || seenCount == null ? 0 : Math.max(0, inboxCount - seenCount)
+  const inboxVisible = compact ? mobileSheet : inspectorOpen
+  const unseen = inboxVisible || seenCount == null ? 0 : Math.max(0, inboxCount - seenCount)
   if (uploads && seenCount == null) setSeenCount(uploads.length)
+  if (inboxVisible && seenCount != null && seenCount !== inboxCount) setSeenCount(inboxCount)
 
   // Window commands from control-panel buttons. In full control mode the control panel owns its
   // own windows; with the console sidebar open, its Notes belong to the sidebar.
@@ -231,21 +233,8 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
     !controlMode,
   )
 
-  const switchRightTab = (tab: 'editor' | 'inbox') => {
-    setSeenCount(inboxCount)
-    setRightTab(tab)
-  }
-  const openEditor = (state: EditorState) => {
-    setEditor(state)
-    if (state) {
-      // Opening the editor by any route (new cue, tray "編輯") turns edit mode on, so the editor never shows outside it.
-      setEditMode(true)
-      switchRightTab('editor')
-      setMobileSheet(true)
-      // Picking a cue to edit brings the collapsed editor back.
-      setInspector(true)
-    }
-  }
+  // The editor is a pop-up window, hidden until a cue is picked in edit mode (or 新增 Cue is pressed).
+  const openEditor = (state: EditorState) => setEditor(state)
 
   const isLive = live?.projectId === show.projectId && live?.versionId === show.versionId
   const onlineAudience = presence.map((p) => p.audienceId)
@@ -256,6 +245,8 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   // Show clock: frozen at pausedAt while paused, so progress bars and countdowns hold still.
   const liveNow = useServerNow(serverNow, !paused && (instances.length > 0 || showState.goLockedUntil > 0))
   const now = showClock(showState, liveNow)
+  // Names the phone that films for AUDIENCE_LIVE cues (the trigger host only, so one console decides).
+  useLiveDirector({ basePath, instances, presence, now, enabled: router.isHost })
 
   // Latest instance per cue, for row progress bars.
   // Audience channel groups: which one the console is focused on (ALL = overview of every group).
@@ -711,10 +702,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                 )}
                 {compact && (
                   <button
-                    onClick={() => {
-                      switchRightTab('inbox')
-                      setMobileSheet(true)
-                    }}
+                    onClick={() => setMobileSheet(true)}
                     className="min-h-10 rounded-lg bg-white/[0.07] px-3 text-xs font-medium text-white/80"
                   >
                     📥 收件匣{unseen > 0 ? ` +${unseen}` : ''}
@@ -726,10 +714,10 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                     setEditMode((v) => !v)
                   }}
                   aria-pressed={editMode}
-                  title={editMode ? '編輯模式：點 Cue 會開啟編輯器（再按一次關閉）' : '點 Cue 只會選取待命；開啟編輯模式後才能編輯'}
+                  title={editMode ? '編輯已開啟：點 Cue 會跳出編輯視窗（再按一次關閉）' : '點 Cue 只會選取待命；按「編輯」後點 Cue 才會跳出編輯視窗'}
                   className={`rounded-lg px-3 py-1.5 text-xs font-medium transition pointer-coarse:min-h-10 ${editMode ? 'bg-accent text-white' : 'bg-white/[0.07] text-white/80 hover:bg-white/[0.12]'}`}
                 >
-                  ✎ 編輯模式{editMode ? '：開' : ''}
+                  ✎ 編輯{editMode ? '：開' : ''}
                 </button>
                 <button
                   onClick={() => openEditor({ mode: 'create' })}
@@ -816,26 +804,23 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
             />
           </main>
 
-          {/* Right: inspector — cue editor / audience inbox (collapsible) */}
-          {compact && !(mobileSheet && (editor != null || rightTab === 'inbox')) ? null : !compact && !inspectorOpen ? (
+          {/* Right: audience inbox (collapsible). The cue editor is a pop-up window, not part of this column. */}
+          {compact && !mobileSheet ? null : !compact && !inspectorOpen ? (
             <button
               onClick={() => setInspector(true)}
               className="flex min-h-12 items-center justify-center gap-2 border-t border-line bg-panel/50 text-xs text-white/55 hover:bg-white/[0.06] hover:text-white lg:min-h-0 lg:flex-col lg:border-t-0 lg:border-l lg:py-4"
-              title={editMode ? '展開 Cue 編輯區' : '展開收件匣'}
+              title="展開收件匣"
             >
               <span className="text-base">‹</span>
-              <span className="lg:[writing-mode:vertical-rl]">{editMode ? '展開編輯區' : '展開收件匣'}{unseen > 0 ? ` · 收件匣 +${unseen}` : ''}</span>
+              <span className="lg:[writing-mode:vertical-rl]">展開收件匣{unseen > 0 ? ` · 收件匣 +${unseen}` : ''}</span>
             </button>
           ) : (
           <>
           {compact && (
-            // Phones: the editor is a bottom sheet over a blurred dark backdrop; tapping the backdrop closes it.
+            // Phones: the inbox is a bottom sheet over a blurred dark backdrop; tapping the backdrop closes it.
             <div
               className="fixed inset-0 z-[69] bg-black/60 backdrop-blur-sm"
-              onClick={() => {
-                setMobileSheet(false)
-                setEditor(null)
-              }}
+              onClick={() => setMobileSheet(false)}
               data-mobile-sheet-backdrop
             />
           )}
@@ -847,44 +832,25 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
             }
             data-mobile-sheet={compact || undefined}
           >
-            <div className="flex gap-1 border-b border-line p-2" role="tablist">
+            <div className="flex items-center gap-1 border-b border-line p-2">
               <button
-                onClick={() => {
-                  if (compact) {
-                    setMobileSheet(false)
-                    setEditor(null)
-                  } else setInspector(false)
-                }}
+                onClick={() => (compact ? setMobileSheet(false) : setInspector(false))}
                 className="flex min-h-10 w-9 shrink-0 items-center justify-center rounded-lg text-white/45 hover:bg-white/10 hover:text-white"
-                title={editMode ? '收合編輯區' : '收合收件匣'}
-                aria-label={editMode ? '收合編輯區' : '收合收件匣'}
+                title="收合收件匣"
+                aria-label="收合收件匣"
               >
                 ›
               </button>
-              {editMode && (
-                <RightTab active={rightTab === 'editor'} onClick={() => switchRightTab('editor')}>
-                  ✎ Cue 編輯
-                </RightTab>
-              )}
-              <RightTab active={rightTab === 'inbox'} onClick={() => switchRightTab('inbox')}>
+              <div className="flex min-h-10 flex-1 items-center justify-center text-xs font-medium text-white pointer-coarse:min-h-12 pointer-coarse:text-sm">
                 📥 收件匣
                 <span className="ml-1.5 font-mono text-[11px] opacity-60">{inboxCount}</span>
-                {unseen > 0 && (
-                  <span className="ml-1.5 rounded-full bg-go px-1.5 text-[10px] font-bold text-black">+{unseen}</span>
-                )}
-              </RightTab>
+              </div>
             </div>
 
             <div className="relative min-h-0 flex-1">
-              <AnimatePresence mode="wait">
-                {rightTab === 'inbox' || !editMode ? (
-                  <motion.div
+              <motion.div
                     // Re-mount when an interactive cue fires so the inbox jumps to its uploads.
                     key={`inbox-${latestInteractive?.id ?? 'all'}`}
-                    initial={{ opacity: 0, x: -16 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -16 }}
-                    transition={{ duration: 0.18 }}
                     className="absolute inset-0"
                   >
                     <MediaPool
@@ -898,73 +864,76 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                       onRecheck={(upload) => recheckModeration(show.projectId, upload).catch((err: Error) => alert(err.message))}
                     />
                   </motion.div>
-                ) : editor ? (
-                  <motion.div
-                    key={editor.mode === 'edit' ? editor.cueId : 'create'}
-                    initial={{ opacity: 0, x: 24 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 24 }}
-                    transition={{ duration: 0.18 }}
-                    className="absolute inset-0"
-                  >
-                    {editor.mode === 'create' ? (
-                      <CueEditor
-                        cue={null}
-                        initial={{ ...DEFAULT_CUE, cueNumber: nextCueNumber, targetChannels: channelCount > 0 && channelView !== CHANNEL_ALL ? [channelView] : ['all'] }}
-                        channelCount={channelCount}
-                        onlineAudience={onlineAudience}
-                        inbox={uploads}
-                        allCues={cues}
-                        projectId={show.projectId}
-                        projectName={projectName}
-                        onClose={() => setEditor(null)}
-                        onSave={async (draft) => {
-                          const saved = await addCue(draft)
-                          touchProject(show.projectId).catch(ignore)
-                          setEditor({ mode: 'edit', cueId: saved.id })
-                        }}
-                      />
-                    ) : editingCue ? (
-                      <CueEditor
-                        cue={editingCue}
-                        channelCount={channelCount}
-                        initial={stripId(editingCue)}
-                        onlineAudience={onlineAudience}
-                        inbox={uploads}
-                        allCues={cues}
-                        projectId={show.projectId}
-                        projectName={projectName}
-                        onClose={() => setEditor(null)}
-                        onSave={async (draft) => {
-                          await saveCue(editingCue.id, draft)
-                          touchProject(show.projectId).catch(ignore)
-                        }}
-                        onDelete={() => {
-                          setEditor(null)
-                          removeCue(editingCue.id)
-                        }}
-                      />
-                    ) : null}
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="idle"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-8 text-center"
-                  >
-                    <div className="text-3xl text-white/10">✎</div>
-                    <p className="text-sm text-white/40">點選 Cue 以編輯</p>
-                    <p className="text-xs text-white/25">或從「收件匣」把觀眾上傳的檔案一鍵建立為 Cue</p>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
           </aside>
           </>
           )}
         </div>
+
+        <AnimatePresence>
+          {editor && (editor.mode === 'create' || editingCue) && (
+            // Pop-up editor: hidden until a cue is picked in edit mode. No backdrop-click close, so a stray tap can't drop unsaved edits.
+            <motion.div
+              key="cue-editor-window"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm sm:p-6"
+            >
+              <motion.div
+                key={editor.mode === 'edit' ? editor.cueId : 'create'}
+                initial={{ opacity: 0, y: 16, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 16, scale: 0.98 }}
+                transition={{ duration: 0.18 }}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Cue 編輯"
+                className="relative h-[100dvh] w-full max-w-2xl overflow-hidden border border-line bg-[#0b0b0d] shadow-2xl sm:h-[90dvh] sm:rounded-2xl"
+              >
+                {editor.mode === 'create' ? (
+                  <CueEditor
+                    cue={null}
+                    initial={{ ...DEFAULT_CUE, cueNumber: nextCueNumber, targetChannels: channelCount > 0 && channelView !== CHANNEL_ALL ? [channelView] : ['all'] }}
+                    channelCount={channelCount}
+                    onlineAudience={onlineAudience}
+                    inbox={uploads}
+                    allCues={cues}
+                    projectId={show.projectId}
+                    projectName={projectName}
+                    onClose={() => setEditor(null)}
+                    onSave={async (draft) => {
+                      const saved = await addCue(draft)
+                      touchProject(show.projectId).catch(ignore)
+                      setEditor({ mode: 'edit', cueId: saved.id })
+                    }}
+                  />
+                ) : editingCue ? (
+                  <CueEditor
+                    cue={editingCue}
+                    channelCount={channelCount}
+                    initial={stripId(editingCue)}
+                    onlineAudience={onlineAudience}
+                    inbox={uploads}
+                    allCues={cues}
+                    projectId={show.projectId}
+                    projectName={projectName}
+                    onClose={() => setEditor(null)}
+                    onSave={async (draft) => {
+                      await saveCue(editingCue.id, draft)
+                      touchProject(show.projectId).catch(ignore)
+                    }}
+                    onDelete={() => {
+                      setEditor(null)
+                      removeCue(editingCue.id)
+                    }}
+                  />
+                ) : null}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <AnimatePresence>
           {notesShown && (
@@ -1009,21 +978,6 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
         )}
       </div>
     </IntercomContext.Provider>
-  )
-}
-
-function RightTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={`flex min-h-10 flex-1 items-center justify-center rounded-lg text-xs font-medium transition pointer-coarse:min-h-12 pointer-coarse:text-sm ${
-        active ? 'bg-white/10 text-white' : 'text-white/45 hover:bg-white/[0.04] hover:text-white/75'
-      }`}
-    >
-      {children}
-    </button>
   )
 }
 

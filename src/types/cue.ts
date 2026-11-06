@@ -6,7 +6,7 @@ import type { ExecutorRun } from './sequence'
 import type { CueTrigger } from './trigger'
 import { normalizeMix, type VjMix } from './vj'
 
-export type CueType = 'AUDIO' | 'VIDEO' | 'IMAGE' | 'TEXT' | 'INTERACTIVE_UPLOAD' | 'BLACKOUT' | 'VIBRATION' | 'VJ'
+export type CueType = 'AUDIO' | 'VIDEO' | 'IMAGE' | 'TEXT' | 'INTERACTIVE_UPLOAD' | 'BLACKOUT' | 'VIBRATION' | 'VJ' | 'AUDIENCE_LIVE'
 
 export const CUE_TYPE_LABELS: Record<CueType, string> = {
   AUDIO: '音訊',
@@ -17,6 +17,7 @@ export const CUE_TYPE_LABELS: Record<CueType, string> = {
   BLACKOUT: '暗場',
   VIBRATION: '震動提示',
   VJ: 'VJ 剪輯觸發',
+  AUDIENCE_LIVE: '觀眾直播',
 }
 
 /** Compact glyphs for list rows and type pickers. */
@@ -29,6 +30,7 @@ export const CUE_TYPE_GLYPHS: Record<CueType, string> = {
   BLACKOUT: '●',
   VIBRATION: '📳',
   VJ: '🎬',
+  AUDIENCE_LIVE: '🔴',
 }
 
 export type UploadKind = 'photo' | 'audio' | 'both' | 'video' | 'any'
@@ -63,6 +65,23 @@ export const FOLLOW_MODE_LABELS: Record<FollowMode, string> = {
   none: '無（等待手動 GO）',
   autoFollow: '淡出開始 / 結束時接續',
   autoContinue: '開始後接續（可交疊）',
+}
+
+/** AUDIENCE_LIVE: how the phone that films is chosen. */
+export type LiveOperatorMode = 'specific' | 'first' | 'random'
+
+export const LIVE_OPERATOR_LABELS: Record<LiveOperatorMode, string> = {
+  specific: '依指定連線 ID',
+  first: '自動指派該頻道第一位登入觀眾',
+  random: '現場隨機抽樣',
+}
+
+/** AUDIENCE_LIVE: what the audience sees when no camera phone can be reached. */
+export type LiveFallback = 'black' | 'standby'
+
+export const LIVE_FALLBACK_LABELS: Record<LiveFallback, string> = {
+  black: '黑屏並顯示「直播中斷」提示',
+  standby: '直接切回原本的畫面（預備畫面）',
 }
 
 /** Who receives a cue. `selected` uses the audience codes in `targetIds`. */
@@ -125,6 +144,12 @@ export interface Cue {
   preWaitVibrate: boolean
   /** Seconds before Pre-Wait ends that the reminder fires (0 = at the very end). */
   preWaitVibrateLead: number
+
+  // — Audience live camera (type AUDIENCE_LIVE; sent to and filmed from `targetChannels`) —
+  liveOperatorMode: LiveOperatorMode
+  /** Audience code of the phone that films, for liveOperatorMode 'specific'. */
+  liveOperatorId: string
+  liveFallback: LiveFallback
 
   // — After this cue starts —
   followMode: FollowMode
@@ -193,6 +218,9 @@ export const DEFAULT_CUE: Omit<Cue, 'id'> = {
   vibrationInterval: 200,
   preWaitVibrate: false,
   preWaitVibrateLead: 3,
+  liveOperatorMode: 'first',
+  liveOperatorId: '',
+  liveFallback: 'black',
   followMode: 'none',
   postWaitTime: 0,
   autoStopAfter: 0,
@@ -254,7 +282,8 @@ export const isMediaCue = (cue: Cue) => cue.type === 'AUDIO' || cue.type === 'VI
 export const vibrationLengthMs = (cue: Pick<Cue, 'vibrationCount' | 'vibrationDuration' | 'vibrationInterval'>) =>
   Math.max(1, cue.vibrationCount) * cue.vibrationDuration + Math.max(0, cue.vibrationCount - 1) * cue.vibrationInterval
 
-export const isVisualCue = (cue: Cue) => cue.type !== 'AUDIO' && cue.type !== 'VIBRATION'
+// A live camera is an overlay on top of whatever is on stage, so it never replaces (or is replaced by) a picture.
+export const isVisualCue = (cue: Cue) => cue.type !== 'AUDIO' && cue.type !== 'VIBRATION' && cue.type !== 'AUDIENCE_LIVE'
 
 /** Whether a cue is delivered to the given audience code. */
 export const cueTargets = (cue: Cue, audienceId: string, channel: string | null = null) =>

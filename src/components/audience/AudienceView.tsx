@@ -1,4 +1,9 @@
+import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
+import { useServerNow } from '../../hooks/useServerNow'
+import { liveNode } from '../../services/liveCamera'
+import { activeList, activeStartAt, cueTargets, showClock } from '../../types/cue'
+import { LiveLayer } from './LiveCamera'
 import { setListenOnly } from '../../services/audioSession'
 import { useAudienceChannel } from '../../hooks/useAudienceChannel'
 import { useVibrationCues } from '../../hooks/useVibrationCues'
@@ -77,6 +82,10 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
   useVibrationCues(showState, serverNow, audienceId, channel, entered)
   // Live voice from the operator to this group (receive-only; needs the page's tap to be allowed to play).
   const voice = useAudienceVoice(versionPath(show), audienceId, entered)
+  // Live camera cue: once its Pre-Wait is over, a full-screen layer takes over this phone (camera or viewer).
+  const liveCues = activeList(showState).filter((a) => a.cue.type === 'AUDIENCE_LIVE' && a.stopAt == null && cueTargets(a.cue, audienceId, channel))
+  const liveTick = useServerNow(serverNow, liveCues.length > 0, 250)
+  const liveInst = entered ? liveCues.findLast((a) => showClock(showState, liveTick) >= activeStartAt(a)) : undefined
   const [banner, setBanner] = useState<Announcement | null>(null)
   const seenAnnounce = useRef<string | null | undefined>(undefined)
   const [pushState, setPushState] = useState<AudiencePushStatus>(() => audiencePushStatus())
@@ -251,6 +260,14 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
           <AudienceCode code={audienceId} large />
         </div>
       )}
+
+      <AnimatePresence>
+        {liveInst && (
+          <motion.div key={liveInst.instanceId} className="absolute inset-0 z-30" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
+            <LiveLayer node={liveNode(versionPath(show), liveInst.instanceId)} cue={liveInst.cue} audienceId={audienceId} />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {entered && menu && (
         <div className="pointer-events-none absolute top-[max(0.75rem,env(safe-area-inset-top))] left-3">

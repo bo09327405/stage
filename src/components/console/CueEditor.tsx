@@ -7,6 +7,8 @@ import { mediaFromUpload, uploadTitle } from '../../utils/uploadCue'
 import {
   CUE_TYPE_GLYPHS,
   CUE_TYPE_LABELS,
+  LIVE_FALLBACK_LABELS,
+  LIVE_OPERATOR_LABELS,
   STOP_OTHERS_LABELS,
   UPLOAD_KIND_LABELS,
   cueRunLength,
@@ -16,6 +18,8 @@ import {
   type AudienceUpload,
   type Cue,
   type CueType,
+  type LiveFallback,
+  type LiveOperatorMode,
   type StopOthersMode,
   type UploadKind,
 } from '../../types/cue'
@@ -77,7 +81,7 @@ function stableStringify(value: unknown): string {
 }
 type TabId = 'basic' | 'media' | 'visual' | 'start' | 'after' | 'target' | 'triggers'
 
-const TYPES: CueType[] = ['AUDIO', 'VIDEO', 'IMAGE', 'TEXT', 'INTERACTIVE_UPLOAD', 'BLACKOUT', 'VIBRATION', 'VJ']
+const TYPES: CueType[] = ['AUDIO', 'VIDEO', 'IMAGE', 'TEXT', 'INTERACTIVE_UPLOAD', 'BLACKOUT', 'VIBRATION', 'VJ', 'AUDIENCE_LIVE']
 const UPLOAD_ACCEPT: Partial<Record<CueType, string>> = {
   AUDIO: 'audio/*',
   VIDEO: 'video/*',
@@ -531,6 +535,49 @@ export function CueEditor({
                   <img src={draft.targetUrl} alt="" className="max-h-48 w-full rounded-lg bg-black object-contain" />
                 )}
               </>
+            ) : draft.type === 'AUDIENCE_LIVE' ? (
+              <div className="space-y-4" data-live-editor>
+                <p className="rounded-lg bg-white/[0.03] p-3 text-xs leading-relaxed text-white/50">
+                  GO 時，下方挑出的一支觀眾手機會被要求開啟相機與麥克風，畫面即時全螢幕播給「目標」分頁所選頻道的其他觀眾。STOP 或攝影師按「結束直播」後自動還原。
+                </p>
+                <label className="block">
+                  <Label>攝影師指派方式</Label>
+                  <select className={fieldClass} value={draft.liveOperatorMode} onChange={(e) => set('liveOperatorMode', e.target.value as LiveOperatorMode)}>
+                    {(Object.keys(LIVE_OPERATOR_LABELS) as LiveOperatorMode[]).map((m) => (
+                      <option key={m} value={m}>
+                        {LIVE_OPERATOR_LABELS[m]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {draft.liveOperatorMode === 'specific' && (
+                  <label className="block">
+                    <Label hint="觀眾手機畫面上的識別碼；下拉可選目前在線的手機">攝影師連線 ID</Label>
+                    <input
+                      className={`${fieldClass} font-mono uppercase`}
+                      list="live-operator-ids"
+                      placeholder="例如 K7QF"
+                      value={draft.liveOperatorId}
+                      onChange={(e) => set('liveOperatorId', e.target.value.toUpperCase())}
+                    />
+                    <datalist id="live-operator-ids">
+                      {onlineAudience.map((id) => (
+                        <option key={id} value={id} />
+                      ))}
+                    </datalist>
+                  </label>
+                )}
+                <label className="block">
+                  <Label hint="攝影師手機斷線、拒絕權限，或找不到人時">備用處理</Label>
+                  <select className={fieldClass} value={draft.liveFallback} onChange={(e) => set('liveFallback', e.target.value as LiveFallback)}>
+                    {(Object.keys(LIVE_FALLBACK_LABELS) as LiveFallback[]).map((m) => (
+                      <option key={m} value={m}>
+                        {LIVE_FALLBACK_LABELS[m]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             ) : draft.type === 'VIBRATION' ? (
               <HapticEditor
                 value={draft}

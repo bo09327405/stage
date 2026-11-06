@@ -139,6 +139,28 @@ const rules = {
                 },
               },
             },
+            // Audience live camera: the console (member) names the phone that films; that phone (no sign-in) reports
+            // its status and offers video to each viewer, viewers announce themselves and answer. Shaped, short strings only.
+            live: {
+              $iid: {
+                operator: { '.read': true, '.write': member, '.validate': "newData.val() == null || (newData.hasChildren(['audienceId', 'at']) && newData.child('audienceId').isString() && newData.child('audienceId').val().length < 40)" },
+                status: { '.read': true, '.write': true, '.validate': "newData.val() == null || (newData.hasChildren(['state']) && newData.child('state').isString() && newData.child('state').val().matches(/^(waiting|live|denied|failed|ended)$/))" },
+                viewers: { $aid: { '.read': true, '.write': true, '.validate': "newData.val() == null || newData.hasChildren(['at'])" } },
+                peers: {
+                  $aid: {
+                    offer: { '.read': true, '.write': true, '.validate': "newData.val() == null || (newData.hasChildren(['sdp', 'at']) && newData.child('sdp').isString() && newData.child('sdp').val().length < 20000)" },
+                    answer: { '.read': true, '.write': true, '.validate': "newData.val() == null || (newData.hasChildren(['sdp']) && newData.child('sdp').isString() && newData.child('sdp').val().length < 20000)" },
+                    ice: {
+                      $k: {
+                        '.read': true,
+                        '.write': true,
+                        '.validate': "newData.val() == null || (newData.hasChildren(['from', 'candidate']) && newData.child('candidate').isString() && newData.child('candidate').val().length < 2000)",
+                      },
+                    },
+                  },
+                },
+              },
+            },
             presence: {
               $aid: {
                 '.write': true,
