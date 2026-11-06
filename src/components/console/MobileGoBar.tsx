@@ -48,7 +48,7 @@ export function MobileGoBar({
       data-mobile-gobar
     >
       <div className="relative flex items-center justify-center pb-1.5">
-        <h2 className="max-w-[60%] truncate text-base font-bold">{title}</h2>
+        <h2 className="max-w-[60%] truncate text-sm font-bold">{title}</h2>
         <button
           type="button"
           onClick={onAdd}
@@ -68,7 +68,7 @@ export function MobileGoBar({
             data-mobile-pause
             onClick={paused ? onStop : onPause}
             disabled={!secondaryEnabled}
-            className={`h-[76px] w-full rounded-xl border-2 text-xl font-extrabold transition active:scale-[0.97] ${
+            className={`h-[64px] w-full rounded-xl border-2 text-lg font-extrabold transition active:scale-[0.97] ${
               !secondaryEnabled
                 ? 'border-white/10 bg-white/[0.05] text-white/25'
                 : paused
@@ -85,11 +85,11 @@ export function MobileGoBar({
           data-mobile-go
           onClick={paused ? onResume : onGo}
           disabled={!goEnabled}
-          className={`relative h-[100px] min-w-0 flex-1 overflow-hidden rounded-xl border-2 transition active:scale-[0.98] ${
+          className={`relative h-[84px] min-w-0 flex-1 overflow-hidden rounded-xl border-2 transition active:scale-[0.98] ${
             goEnabled ? 'border-[#6fdc8c] bg-[#14a32a] text-white shadow-[0_0_40px_-12px_rgba(48,209,88,0.8)]' : 'border-white/10 bg-white/[0.05] text-white/25'
           }`}
         >
-          <span className="block truncate px-2 text-6xl leading-none font-extrabold tracking-tight">
+          <span className="block truncate px-2 text-5xl leading-none font-extrabold tracking-tight">
             {paused ? 'Resume' : target ? `Go ${target.cueNumber}` : 'Go'}
           </span>
           {locked && (
