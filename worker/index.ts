@@ -1,6 +1,7 @@
 import { notionFailure, notionIdOf, readNotionPage } from '../server/notionCore.ts'
 import { ttsRoute } from './tts.ts'
 import { pushRoute } from './push.ts'
+import { liveRoute } from './live.ts'
 import { analyzeMediaUrl, isAudioExt, isVideoExt, isPrivateHost, platformOf } from '../src/utils/mediaUrl.ts'
 import { callerFromHeaders, projectAccess, projectOfKey, type Caller } from '../server/projectAccess.ts'
 
@@ -21,6 +22,11 @@ interface Env {
   TTS_DAILY_CHARS?: string
   VAPID_PUBLIC?: string
   VAPID_PRIVATE_JWK?: string
+  /** Audience live camera (Cloudflare Realtime SFU) — see worker/live.ts. */
+  CF_REALTIME_APP_ID?: string
+  CF_REALTIME_APP_SECRET?: string
+  CF_TURN_KEY_ID?: string
+  CF_TURN_KEY_TOKEN?: string
 }
 
 const PUBLIC_PREFIX = 'theatre/public/'
@@ -117,6 +123,7 @@ async function notionRoute(req: Request, url: URL): Promise<Response> {
 async function handle(req: Request, env: Env, url: URL): Promise<Response> {
   if (url.pathname === '/api/notion') return notionRoute(req, url)
   if (url.pathname.startsWith('/api/push/')) return pushRoute(req, env, url)
+  if (url.pathname.startsWith('/api/live/')) return liveRoute(req, env, url)
   if (url.pathname === '/api/tts' || url.pathname.startsWith('/api/tts/')) return ttsRoute(req, env, url)
   if (!url.pathname.startsWith('/api/r2/')) return json(404, { error: 'not found' })
   const path = url.pathname.slice('/api/r2'.length)

@@ -113,7 +113,7 @@ function LiveOperatorView({ node, audienceId }: { node: string; audienceId: stri
   const [facing, setFacing] = useState<'user' | 'environment'>('environment')
   const [muted, setMuted] = useState(false)
   const [viewers, setViewers] = useState(0)
-  const [connected, setConnected] = useState(0)
+  const [link, setLink] = useState<RTCPeerConnectionState>('new')
   const preview = useRef<HTMLVideoElement>(null)
   const stream = useRef<MediaStream | null>(null)
   const broadcaster = useRef<LiveBroadcaster | null>(null)
@@ -121,7 +121,7 @@ function LiveOperatorView({ node, audienceId }: { node: string; audienceId: stri
 
   const openCamera = (mode: 'user' | 'environment') =>
     navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: mode }, width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 24 } },
+      video: { facingMode: { ideal: mode }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     })
 
@@ -157,19 +157,19 @@ function LiveOperatorView({ node, audienceId }: { node: string; audienceId: stri
       })
       stream.current = media
       if (preview.current) preview.current.srcObject = media
-      const live = new LiveBroadcaster(node, audienceId, media, setConnected)
+      const live = new LiveBroadcaster(node, audienceId, media, setLink)
       broadcaster.current = live
-      unsubViewers.current = watchViewers(node, (v) => {
-        setViewers(v.filter((x) => x.audienceId !== audienceId).length)
-        live.sync(v)
-      })
+      await live.start()
+      // The operator is a viewer of nothing: don't count this phone.
+      unsubViewers.current = watchViewers(node, (n) => setViewers(n))
       await setLiveStatus(node, { state: 'live' })
       setPhase('live')
     } catch (err) {
       teardown()
-      setError(describeCameraError(err))
+      const msg = err instanceof Error && !(err instanceof DOMException) ? `直播伺服器連線失敗：${err.message}` : describeCameraError(err)
+      setError(msg)
       setPhase('denied')
-      void setLiveStatus(node, { state: 'denied', msg: describeCameraError(err) })
+      void setLiveStatus(node, { state: 'denied', msg })
     }
   }
 
@@ -240,7 +240,7 @@ function LiveOperatorView({ node, audienceId }: { node: string; audienceId: stri
           直播中
         </span>
         <span className="text-xs text-white/80">
-          觀眾 {connected}/{viewers}
+          {link === 'connected' ? `觀眾 ${viewers}` : link === 'failed' || link === 'disconnected' ? '⚠ 連線不穩' : '連線伺服器中…'}
         </span>
       </div>
       {error && <p className="absolute inset-x-4 top-20 rounded-lg bg-black/70 px-3 py-2 text-center text-xs text-red-300">{error}</p>}

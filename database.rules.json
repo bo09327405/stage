@@ -78,26 +78,10 @@
                     ".validate": "newData.val() == null || newData.hasChildren(['at'])"
                   }
                 },
-                "peers": {
-                  "$aid": {
-                    "offer": {
-                      ".read": true,
-                      ".write": true,
-                      ".validate": "newData.val() == null || (newData.hasChildren(['sdp', 'at']) && newData.child('sdp').isString() && newData.child('sdp').val().length < 20000)"
-                    },
-                    "answer": {
-                      ".read": true,
-                      ".write": true,
-                      ".validate": "newData.val() == null || (newData.hasChildren(['sdp']) && newData.child('sdp').isString() && newData.child('sdp').val().length < 20000)"
-                    },
-                    "ice": {
-                      "$k": {
-                        ".read": true,
-                        ".write": true,
-                        ".validate": "newData.val() == null || (newData.hasChildren(['from', 'candidate']) && newData.child('candidate').isString() && newData.child('candidate').val().length < 2000)"
-                      }
-                    }
-                  }
+                "sfu": {
+                  ".read": true,
+                  ".write": true,
+                  ".validate": "newData.val() == null || (newData.hasChildren(['sessionId']) && newData.child('sessionId').isString() && newData.child('sessionId').val().length < 100)"
                 }
               }
             },

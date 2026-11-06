@@ -1,24 +1,24 @@
-import { onChildAdded, onDisconnect, onValue, push, ref, remove, serverTimestamp, set } from 'firebase/database'
+import { onDisconnect, onValue, ref, remove, serverTimestamp, set } from 'firebase/database'
 import { useEffect, useState } from 'react'
 import { db } from './firebase'
 
 /*
  * Audience live camera: one phone films, the other phones of the channel watch full screen.
  *
- * Everything lives under {versionBase}/live/{instanceId} (see the database rules):
- *   operator            {audienceId, at}   which phone films — named by the console (useLiveDirector)
- *   status              {state, msg?}      waiting | live | denied | failed | ended — reported by the filming phone
- *   viewers/{aid}       {at}               a phone that wants the picture
- *   peers/{aid}/offer|answer|ice           WebRTC signaling between the filming phone and one viewer
- *
- * Transport is a star of direct WebRTC connections (camera phone → each viewer), signaled through Firebase like the
- * operator voice line. That is fine for a few dozen phones on good networks; a bigger crowd, or networks that block
- * peer-to-peer, needs an SFU (LiveKit / Cloudflare Realtime) behind the same `LiveBroadcaster` / `joinLive` seam.
+ * Video goes through a Cloudflare Realtime SFU (the Worker's /api/live/* routes hold the app secret): the camera phone
+ * uploads ONE copy, every viewer pulls it from Cloudflare, so the crowd size does not load the camera phone.
+ * Firebase only carries the small coordination records under {versionBase}/live/{instanceId} (see the database rules):
+ *   operator            {audienceId, at}          which phone films — named by the console (useLiveDirector)
+ *   status              {state, msg?}             waiting | live | denied | failed | ended — reported by the filming phone
+ *   sfu                 {sessionId, video, audio} where the camera phone published, for viewers to pull
+ *   viewers/{aid}       {at}                      phones watching (a head count for the camera phone)
  */
 
-const ICE_SERVERS: RTCIceServer[] = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }]
-/** Per-viewer video cap: the camera phone uploads one copy per viewer. */
-const MAX_VIDEO_BITRATE = 700_000
+const FALLBACK_ICE: RTCIceServer[] = [{ urls: 'stun:stun.cloudflare.com:3478' }]
+const VIDEO_TRACK = 'video'
+const AUDIO_TRACK = 'audio'
+/** One upstream copy, so it can afford more than a per-viewer mesh stream. */
+const MAX_VIDEO_BITRATE = 1_500_000
 
 export type LiveState = 'waiting' | 'live' | 'denied' | 'failed' | 'ended'
 export interface LiveStatus {
@@ -50,150 +50,97 @@ export function useLiveState(node: string) {
   return { operator, status }
 }
 
-interface OutPeer {
-  key: string
-  pc: RTCPeerConnection
-  unsubs: (() => void)[]
-  retry?: number
+async function api<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`/api/live/${path}`, body === undefined ? undefined : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const data = (await res.json().catch(() => ({}))) as T & { error?: string }
+  if (!res.ok) throw new Error(data.error ?? `直播伺服器錯誤（HTTP ${res.status}）`)
+  return data
 }
 
-/** Camera phone: one outgoing connection per viewer, all fed from the same camera + microphone stream. */
-export class LiveBroadcaster {
-  private peers = new Map<string, OutPeer>()
-  private closed = false
+async function iceServers(): Promise<RTCIceServer[]> {
+  try {
+    return (await api<{ iceServers: RTCIceServer[] }>('ice')).iceServers
+  } catch {
+    return FALLBACK_ICE
+  }
+}
 
+/** Camera phone: publishes the camera + microphone stream to the SFU and announces where, for viewers. */
+export class LiveBroadcaster {
+  private pc: RTCPeerConnection | null = null
+  private closed = false
   private readonly node: string
   private readonly selfId: string
   private readonly stream: MediaStream
-  private readonly onCount: (connected: number) => void
+  private readonly onState: (state: RTCPeerConnectionState) => void
 
-  constructor(node: string, selfId: string, stream: MediaStream, onCount: (connected: number) => void = () => {}) {
+  constructor(node: string, selfId: string, stream: MediaStream, onState: (state: RTCPeerConnectionState) => void = () => {}) {
     this.node = node
     this.selfId = selfId
     this.stream = stream
-    this.onCount = onCount
+    this.onState = onState
   }
 
-  /** Connect to exactly these viewers (key changes when a viewer reloads, which makes a fresh offer). */
-  sync(viewers: { audienceId: string; at: number }[]) {
+  /** Connect to the SFU and announce the session. Rejects with a readable message when the server can't be reached. */
+  async start() {
+    const pc = new RTCPeerConnection({ iceServers: await iceServers(), bundlePolicy: 'max-bundle' })
+    this.pc = pc
+    pc.onconnectionstatechange = () => this.onState(pc.connectionState)
+    const names: { mid: string; trackName: string }[] = []
+    const pending: { transceiver: RTCRtpTransceiver; trackName: string }[] = []
+    for (const track of this.stream.getTracks()) {
+      const transceiver = pc.addTransceiver(track, { direction: 'sendonly', streams: [this.stream] })
+      pending.push({ transceiver, trackName: track.kind === 'video' ? VIDEO_TRACK : AUDIO_TRACK })
+      if (track.kind === 'video') {
+        const params = transceiver.sender.getParameters()
+        params.encodings = params.encodings?.length ? params.encodings : [{}]
+        params.encodings[0].maxBitrate = MAX_VIDEO_BITRATE
+        transceiver.sender.setParameters(params).catch(() => {})
+      }
+    }
+    const { sessionId } = await api<{ sessionId: string }>('session', { node: this.node, audienceId: this.selfId })
+    const offer = await pc.createOffer()
+    await pc.setLocalDescription(offer)
+    for (const p of pending) if (p.transceiver.mid) names.push({ mid: p.transceiver.mid, trackName: p.trackName })
+    const { sdp } = await api<{ sdp: string }>('publish', { node: this.node, audienceId: this.selfId, sessionId, sdp: offer.sdp, tracks: names })
     if (this.closed) return
-    const wanted = new Map(viewers.filter((v) => v.audienceId !== this.selfId).map((v) => [v.audienceId, `${v.audienceId}:${v.at}`]))
-    for (const [id, peer] of [...this.peers]) if (wanted.get(id) !== peer.key) this.close(id)
-    for (const [id, key] of wanted) if (!this.peers.has(id)) void this.open(id, key)
+    await pc.setRemoteDescription({ type: 'answer', sdp })
+    await set(ref(db, `${this.node}/sfu`), { sessionId, video: VIDEO_TRACK, audio: AUDIO_TRACK, at: Date.now() })
   }
 
-  /** Swap the camera (front/back) without renegotiating any connection. */
+  /** Swap the camera (front/back) without renegotiating anything. */
   async replaceVideoTrack(track: MediaStreamTrack) {
-    await Promise.all(
-      [...this.peers.values()].flatMap((p) => p.pc.getSenders().filter((s) => s.track?.kind === 'video').map((s) => s.replaceTrack(track).catch(() => {}))),
-    )
+    await Promise.all(this.pc?.getSenders().filter((s) => s.track?.kind === 'video').map((s) => s.replaceTrack(track).catch(() => {})) ?? [])
   }
 
   stop() {
     this.closed = true
-    for (const id of [...this.peers.keys()]) this.close(id)
-  }
-
-  private report() {
-    this.onCount([...this.peers.values()].filter((p) => p.pc.connectionState === 'connected').length)
-  }
-
-  private async open(id: string, key: string) {
-    const peerNode = `${this.node}/peers/${id}`
-    await remove(ref(db, peerNode)).catch(() => {})
-    if (this.closed) return
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS })
-    const peer: OutPeer = { key, pc, unsubs: [] }
-    this.peers.set(id, peer)
-    for (const track of this.stream.getTracks()) pc.addTrack(track, this.stream)
-    for (const sender of pc.getSenders()) {
-      if (sender.track?.kind !== 'video') continue
-      const params = sender.getParameters()
-      params.encodings = params.encodings?.length ? params.encodings : [{}]
-      params.encodings[0].maxBitrate = MAX_VIDEO_BITRATE
-      sender.setParameters(params).catch(() => {})
+    if (this.pc) {
+      this.pc.onconnectionstatechange = null
+      this.pc.close()
+      this.pc = null
     }
-
-    let remoteSet = false
-    const pending: RTCIceCandidateInit[] = []
-    pc.onicecandidate = (e) => {
-      if (e.candidate) set(push(ref(db, `${peerNode}/ice`)), { from: 'op', candidate: JSON.stringify(e.candidate.toJSON()) }).catch(() => {})
-    }
-    pc.onconnectionstatechange = () => {
-      this.report()
-      if (pc.connectionState === 'failed' && !this.closed) {
-        window.clearTimeout(peer.retry)
-        peer.retry = window.setTimeout(() => {
-          if (this.peers.get(id) === peer) {
-            this.close(id)
-            void this.open(id, key)
-          }
-        }, 2500)
-      }
-    }
-    peer.unsubs.push(
-      onValue(ref(db, `${peerNode}/answer`), async (snap) => {
-        const answer = snap.val() as { sdp?: string } | null
-        if (!answer?.sdp || remoteSet || pc.signalingState !== 'have-local-offer') return
-        remoteSet = true
-        await pc.setRemoteDescription({ type: 'answer', sdp: answer.sdp }).catch(() => {})
-        for (const c of pending.splice(0)) await pc.addIceCandidate(c).catch(() => {})
-      }),
-      onChildAdded(ref(db, `${peerNode}/ice`), (snap) => {
-        const v = snap.val() as { from?: string; candidate?: string } | null
-        if (v?.from !== 'aud' || !v.candidate) return
-        const cand = JSON.parse(v.candidate) as RTCIceCandidateInit
-        if (remoteSet) pc.addIceCandidate(cand).catch(() => {})
-        else pending.push(cand)
-      }),
-    )
-    try {
-      const offer = await pc.createOffer()
-      await pc.setLocalDescription(offer)
-      await set(ref(db, `${peerNode}/offer`), { sdp: offer.sdp ?? '', at: Date.now() })
-    } catch (err) {
-      console.warn('[live camera] offer failed', err)
-    }
-  }
-
-  private close(id: string) {
-    const peer = this.peers.get(id)
-    if (!peer) return
-    window.clearTimeout(peer.retry)
-    peer.unsubs.forEach((u) => u())
-    peer.pc.onicecandidate = null
-    peer.pc.onconnectionstatechange = null
-    peer.pc.close()
-    this.peers.delete(id)
-    remove(ref(db, `${this.node}/peers/${id}`)).catch(() => {})
-    this.report()
+    remove(ref(db, `${this.node}/sfu`)).catch(() => {})
   }
 }
 
-/** Camera phone: the viewers currently asking for the picture. */
-export function watchViewers(node: string, cb: (viewers: { audienceId: string; at: number }[]) => void) {
-  return onValue(ref(db, `${node}/viewers`), (snap) => {
-    const raw = (snap.val() ?? {}) as Record<string, { at?: number }>
-    cb(Object.entries(raw).map(([audienceId, v]) => ({ audienceId, at: Number(v?.at) || 0 })))
-  })
+/** Camera phone: how many viewers are asking for the picture. */
+export function watchViewers(node: string, cb: (count: number) => void) {
+  return onValue(ref(db, `${node}/viewers`), (snap) => cb(Object.keys((snap.val() ?? {}) as object).length))
 }
 
 /**
- * Viewer: announce this phone, answer the camera phone's offer and hand every incoming stream to `onStream`.
- * Returns the cleanup.
+ * Viewer: announce this phone, pull the camera's published tracks from the SFU and hand the stream to `onStream`.
+ * Re-pulls when the camera phone publishes a new session (it reconnected or was replaced). Returns the cleanup.
  */
 export function joinLive(node: string, selfId: string, onStream: (stream: MediaStream | null) => void): () => void {
   let pc: RTCPeerConnection | null = null
-  let lastSdp = ''
-  let unsubIce: (() => void) | null = null
-  const peerNode = `${node}/peers/${selfId}`
+  let generation = 0
   const viewerRef = ref(db, `${node}/viewers/${selfId}`)
 
   const teardown = () => {
-    unsubIce?.()
-    unsubIce = null
+    generation++
     if (pc) {
-      pc.onicecandidate = null
       pc.ontrack = null
       pc.close()
       pc = null
@@ -210,54 +157,47 @@ export function joinLive(node: string, selfId: string, onStream: (stream: MediaS
       .catch(() => {})
   })
 
-  const unsubOffer = onValue(ref(db, `${peerNode}/offer`), async (snap) => {
-    const offer = snap.val() as { sdp?: string } | null
-    if (!offer?.sdp) {
-      lastSdp = ''
-      return teardown()
-    }
-    if (offer.sdp === lastSdp) return
-    lastSdp = offer.sdp
+  const pull = async (sfu: { sessionId: string; video: string; audio: string }) => {
     teardown()
-    const conn = new RTCPeerConnection({ iceServers: ICE_SERVERS })
-    pc = conn
-    conn.addTransceiver('video', { direction: 'recvonly' })
-    conn.addTransceiver('audio', { direction: 'recvonly' })
-    const incoming = new MediaStream()
-    conn.ontrack = (e) => {
-      incoming.addTrack(e.track)
-      onStream(incoming)
-    }
-    conn.onicecandidate = (e) => {
-      if (e.candidate) set(push(ref(db, `${peerNode}/ice`)), { from: 'aud', candidate: JSON.stringify(e.candidate.toJSON()) }).catch(() => {})
-    }
-    const pending: RTCIceCandidateInit[] = []
-    let remoteSet = false
-    unsubIce = onChildAdded(ref(db, `${peerNode}/ice`), (s) => {
-      const v = s.val() as { from?: string; candidate?: string } | null
-      if (v?.from !== 'op' || !v.candidate) return
-      const cand = JSON.parse(v.candidate) as RTCIceCandidateInit
-      if (remoteSet) conn.addIceCandidate(cand).catch(() => {})
-      else pending.push(cand)
-    })
+    const mine = generation
     try {
-      await conn.setRemoteDescription({ type: 'offer', sdp: offer.sdp })
-      remoteSet = true
-      for (const c of pending.splice(0)) await conn.addIceCandidate(c).catch(() => {})
+      const conn = new RTCPeerConnection({ iceServers: await iceServers(), bundlePolicy: 'max-bundle' })
+      if (mine !== generation) return conn.close()
+      pc = conn
+      const incoming = new MediaStream()
+      conn.ontrack = (e) => {
+        incoming.addTrack(e.track)
+        onStream(incoming)
+      }
+      conn.onconnectionstatechange = () => {
+        // Dropped for good: pull again after a moment.
+        if (conn.connectionState === 'failed' && mine === generation) window.setTimeout(() => mine === generation && void pull(sfu), 2000)
+      }
+      const { sessionId } = await api<{ sessionId: string }>('session', { node })
+      const sub = await api<{ sdp: string }>('subscribe', { node, sessionId, trackNames: [sfu.video, sfu.audio] })
+      if (mine !== generation) return
+      await conn.setRemoteDescription({ type: 'offer', sdp: sub.sdp })
       const answer = await conn.createAnswer()
       await conn.setLocalDescription(answer)
-      await set(ref(db, `${peerNode}/answer`), { sdp: answer.sdp ?? '' })
+      await api('renegotiate', { node, sessionId, sdp: answer.sdp })
     } catch (err) {
-      console.warn('[live camera] answer failed', err)
+      console.warn('[live camera] pull failed', err)
+      // The camera may not have published yet: try again shortly while this generation is still current.
+      if (mine === generation) window.setTimeout(() => mine === generation && void pull(sfu), 3000)
     }
+  }
+
+  const unsubSfu = onValue(ref(db, `${node}/sfu`), (snap) => {
+    const sfu = snap.val() as { sessionId?: string; video?: string; audio?: string } | null
+    if (!sfu?.sessionId) return teardown()
+    void pull({ sessionId: sfu.sessionId, video: sfu.video ?? VIDEO_TRACK, audio: sfu.audio ?? AUDIO_TRACK })
   })
 
   return () => {
     unsubConn()
-    unsubOffer()
+    unsubSfu()
     teardown()
     onDisconnect(viewerRef).cancel().catch(() => {})
     remove(viewerRef).catch(() => {})
-    remove(ref(db, `${peerNode}/answer`)).catch(() => {})
   }
 }
