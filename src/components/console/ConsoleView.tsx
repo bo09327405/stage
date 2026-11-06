@@ -245,8 +245,8 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   // Show clock: frozen at pausedAt while paused, so progress bars and countdowns hold still.
   const liveNow = useServerNow(serverNow, !paused && (instances.length > 0 || showState.goLockedUntil > 0))
   const now = showClock(showState, liveNow)
-  // Names the phone that films for AUDIENCE_LIVE cues (the trigger host only, so one console decides).
-  useLiveDirector({ basePath, instances, presence, now, enabled: router.isHost })
+  // Names the phone that films for AUDIENCE_LIVE cues. Every open console may run it: the pick is a first-writer-wins transaction.
+  useLiveDirector({ basePath, instances, presence, now, enabled: true })
 
   // Latest instance per cue, for row progress bars.
   // Audience channel groups: which one the console is focused on (ALL = overview of every group).

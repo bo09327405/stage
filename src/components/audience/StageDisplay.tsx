@@ -14,6 +14,9 @@ import {
   type ShowState,
 } from '../../types/cue'
 import type { ShowRef } from '../../types/project'
+import { versionPath } from '../../types/project'
+import { liveNode } from '../../services/liveCamera'
+import { LivePreview } from './LiveCamera'
 import { dimGain } from '../../utils/dim'
 import { isYoutubeCue } from '../../utils/youtube'
 import { InteractiveUpload } from './InteractiveUpload'
@@ -71,6 +74,7 @@ export function StageDisplay({
   const liveNow = useServerNow(serverNow, instances.length > 0 && showState.pausedAt == null, 100)
   const now = showClock(showState, liveNow)
   const visual = visibleVisual(instances, now)
+  const liveInst = instances.findLast((a) => a.cue.type === 'AUDIENCE_LIVE' && a.stopAt == null && now >= activeStartAt(a))
   // The live VJ mix owns the screen whenever no visual cue is up (a cue always takes priority).
   const liveVj = !visual && showState.vj?.live ? showState.vj : null
   const audioOnly = !visual && !liveVj && instances.some((a) => a.cue.type === 'AUDIO' && a.stopAt == null)
@@ -121,6 +125,12 @@ export function StageDisplay({
           </motion.div>
         ) : null}
       </AnimatePresence>
+      {/* Console Stage window: mirror the audience's full-screen live camera over the picture. */}
+      {preview && liveInst && (
+        <div className="absolute inset-0 z-10">
+          <LivePreview key={liveInst.instanceId} node={liveNode(versionPath(show), liveInst.instanceId)} cue={liveInst.cue} audible={previewSound} />
+        </div>
+      )}
     </div>
   )
 }

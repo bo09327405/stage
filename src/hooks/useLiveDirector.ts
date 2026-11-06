@@ -7,8 +7,8 @@ import { activeStartAt, cueTargets, type ActiveCue } from '../types/cue'
 
 /**
  * Console side of the audience live camera: for every running AUDIENCE_LIVE cue, name the phone that films
- * (by the cue's operator mode) and replace it when it refuses the camera or drops. Only the trigger host runs this,
- * so two console tabs never elect two cameras. Cleans a cue's signaling up once it stops.
+ * (by the cue's operator mode) and replace it when it refuses the camera or drops. Any open console may run this:
+ * the pick is a first-writer-wins transaction, so two console tabs never end up with two cameras. Cleans a cue's signaling up once it stops.
  */
 export function useLiveDirector({
   basePath,
@@ -52,6 +52,7 @@ export function useLiveDirector({
     } else {
       pick = [...pool].sort((a, b) => a.joinedAt - b.joinedAt)[0]
     }
+    console.info(`[live] ${inst.cue.liveOperatorMode} → ${pick?.audienceId ?? '(no candidate)'}; online:`, here.map((p) => `${p.audienceId}/${p.channel ?? '-'}`).join(' ') || '(none)')
     if (!pick) {
       void setLiveStatus(node, { state: 'failed', msg: '找不到可用的直播攝影機' })
       return
