@@ -71,6 +71,7 @@ const EXT_KIND: [RegExp, MediaKind][] = [
   [/\.(mp3|wav|m4a|aac|ogg|oga|opus|flac|aif|aiff|weba)$/i, 'audio'],
   [/\.(mp4|mov|m4v|webm|mkv)$/i, 'video'],
   [/\.(png|jpe?g|gif|webp|avif|svg)$/i, 'image'],
+  [/\.(glb|gltf)$/i, 'model'],
 ]
 
 /**
@@ -97,8 +98,10 @@ export async function lookupR2Input(input: string): Promise<ProjectMedia> {
       ? 'video'
       : type.startsWith('audio/')
         ? 'audio'
-        : EXT_KIND.find(([re]) => re.test(key))?.[1]
-  if (!kind) throw new Error('這不是圖片、音訊或影片檔')
+        : type.startsWith('model/')
+          ? 'model'
+          : EXT_KIND.find(([re]) => re.test(key))?.[1]
+  if (!kind) throw new Error('這不是圖片、音訊、影片或 3D 模型檔')
   return {
     id: `r2:${key}`,
     kind,

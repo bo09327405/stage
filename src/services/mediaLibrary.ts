@@ -18,7 +18,8 @@ import { importToR2, listR2, objectName, type StorageBackend, type StoredFile } 
  * API secret, so this index is what file pickers read to show "this project's files".
  */
 
-export type MediaKind = 'image' | 'audio' | 'video'
+/** `model`: a 3D model (.glb / .gltf) for XR cues. */
+export type MediaKind = 'image' | 'audio' | 'video' | 'model'
 
 export interface ProjectMedia {
   id: string
@@ -45,6 +46,7 @@ export interface ProjectMedia {
 }
 
 export function mediaKindOf(result: CloudinaryUploadResult): MediaKind {
+  if (/^(glb|gltf)$/i.test(result.format ?? '')) return 'model'
   if (result.resource_type === 'image') return 'image'
   return result.is_audio && !result.width ? 'audio' : 'video'
 }
@@ -162,7 +164,7 @@ export function useDefaultMedia() {
         setR2Listed(
           items.map((o) => ({
             id: `r2:${o.key}`,
-            kind: o.contentType.startsWith('image/') ? 'image' : o.contentType.startsWith('video/') ? 'video' : 'audio',
+            kind: o.contentType.startsWith('image/') ? 'image' : o.contentType.startsWith('video/') ? 'video' : o.contentType.startsWith('model/') ? 'model' : 'audio',
             url: o.url,
             publicId: o.key,
             folder: o.key.slice(0, o.key.lastIndexOf('/')),

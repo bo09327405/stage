@@ -103,6 +103,9 @@ const TYPES: Record<string, string> = {
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
   webp: 'image/webp',
+  // 3D models for XR cues (a .gltf must be self-contained: uploads get a time prefix, so sibling files can't be found).
+  glb: 'model/gltf-binary',
+  gltf: 'model/gltf+json',
 }
 const typeOf = (key: string) => TYPES[key.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream'
 
@@ -385,7 +388,7 @@ export function r2Proxy(opts: R2Options): Plugin {
       if (folder && folder !== 'Default' && !(await access.isAdmin(caller)) && !(await access.writableFolders(caller)).has(folder)) return json(res, 403, { error: '沒有權限上傳到這個專案（專案已鎖定為唯讀，或你不是成員）' })
       try {
         const body = await readBody(req)
-        const contentType = /^(audio|video|image)\/[\w.+-]+$|^application\/json$/.test(req.headers['content-type'] ?? '') ? req.headers['content-type']! : typeOf(key)
+        const contentType = /^(audio|video|image|model)\/[\w.+-]+$|^application\/json$/.test(req.headers['content-type'] ?? '') ? req.headers['content-type']! : typeOf(key)
         // Stored with the object too, for when it's served straight from an R2 public domain.
         await client.put(key, body, contentType, isLiveKey(key) ? LIVE_CACHE : undefined)
         return json(res, 200, { key, url: r2Url(key), bytes: body.length, contentType })
@@ -432,7 +435,7 @@ export function r2Proxy(opts: R2Options): Plugin {
         const allowed = filter === 'all' ? listed : (await Promise.all(listed.map(async (o) => ((await filter(o.key)) ? o : null)))).filter((o): o is (typeof listed)[number] => !!o)
         const items = allowed
           .filter((o) => !o.key.endsWith('/'))
-          .filter((o) => (kind === 'raw' ? typeOf(o.key) === 'application/json' : /^(audio|video|image)\//.test(typeOf(o.key))))
+          .filter((o) => (kind === 'raw' ? typeOf(o.key) === 'application/json' : /^(audio|video|image|model)\//.test(typeOf(o.key))))
           .map((o) => ({ ...o, name: o.key.split('/').pop()!, url: r2Url(o.key), contentType: typeOf(o.key) }))
         return json(res, 200, { configured: true, items })
       } catch (err) {

@@ -16,10 +16,11 @@ const PREFIXES = import.meta.env.DEV ? ['/api/r2/', '/api/live/'] : ['/api/r2/',
 const isApiPath = (path: string) => PREFIXES.some((p) => path.startsWith(p))
 
 /**
- * "/api/r2/…" → the Worker. Also fixes full addresses saved while developing (a LAN / ngrok host in
+ * "/api/r2/…" → the Worker (exported for code that loads files without `fetch(string)` or an element's
+ * `src`, e.g. the Three.js loaders). Also fixes full addresses saved while developing (a LAN / ngrok host in
  * front of the same path) so old library entries still resolve.
  */
-const rewrite = (u: string) => {
+export const apiUrl = (u: string) => {
   if (!BASE) return u
   if (isApiPath(u)) return BASE + u
   if (/^https?:\/\//i.test(u) && !u.startsWith(BASE)) {
@@ -33,11 +34,25 @@ const rewrite = (u: string) => {
   return u
 }
 
+/** The browser's own `src` setters, kept from before they are patched below. */
+const nativeSrc = new Map<object, (this: unknown, v: string) => void>()
+
+/**
+ * Assign `src` exactly as given, without sending "/api/r2/…" to the Worker — for code that picks the address
+ * itself (the XR loaders read through the dev server first: see xrAssets.ts).
+ */
+export function setSrcAsIs(el: HTMLImageElement | HTMLMediaElement, url: string) {
+  const proto = el instanceof HTMLImageElement ? HTMLImageElement.prototype : HTMLMediaElement.prototype
+  const set = nativeSrc.get(proto)
+  if (set) set.call(el, url)
+  else el.src = url
+}
+
 if (BASE) {
   const auth = getAuth(app)
   const nativeFetch = window.fetch.bind(window)
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-    const target = typeof input === 'string' ? rewrite(input) : ''
+    const target = typeof input === 'string' ? apiUrl(input) : ''
     if (typeof input !== 'string' || !isApiPath(target.slice(BASE.length)) || !target.startsWith(BASE)) return nativeFetch(input, init)
     const headers = new Headers(init?.headers)
     try {
@@ -61,13 +76,14 @@ if (BASE) {
   const patchSrc = (proto: object) => {
     const d = Object.getOwnPropertyDescriptor(proto, 'src')
     if (!d?.set) return
-    Object.defineProperty(proto, 'src', { ...d, set(this: unknown, v: string) { d.set!.call(this, rewrite(String(v))) } })
+    nativeSrc.set(proto, d.set)
+    Object.defineProperty(proto, 'src', { ...d, set(this: unknown, v: string) { d.set!.call(this, apiUrl(String(v))) } })
   }
   patchSrc(HTMLMediaElement.prototype)
   patchSrc(HTMLImageElement.prototype)
   const setAttr = Element.prototype.setAttribute
   Element.prototype.setAttribute = function (name: string, value: string) {
-    return setAttr.call(this, name, name === 'src' || name === 'href' ? rewrite(String(value)) : value)
+    return setAttr.call(this, name, name === 'src' || name === 'href' ? apiUrl(String(value)) : value)
   }
   const NativeAudio = window.Audio
   window.Audio = function (src?: string) {

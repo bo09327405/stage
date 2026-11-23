@@ -15,7 +15,7 @@ import { db } from './firebase'
  */
 
 export type FileAction = 'upload' | 'link' | 'rename' | 'move' | 'delete' | 'assign' | 'restore'
-export type FileType = 'audio' | 'image' | 'video' | 'document' | 'other'
+export type FileType = 'audio' | 'image' | 'video' | 'model' | 'document' | 'other'
 
 export const ACTION_LABELS: Record<FileAction | 'existing', string> = {
   upload: '上傳',
@@ -70,12 +70,13 @@ export type FileActivityInput = Partial<Omit<FileActivity, 'id' | 'at' | 'editor
 
 /** File type from a name, URL or library kind. */
 export function fileTypeOf(nameOrUrl: string, kind?: string | null): FileType {
-  if (kind === 'audio' || kind === 'image' || kind === 'video') return kind
+  if (kind === 'audio' || kind === 'image' || kind === 'video' || kind === 'model') return kind
   if (kind === 'project' || kind === 'config') return 'document'
   const ext = /\.([a-z0-9]+)(?:$|\?)/i.exec(nameOrUrl)?.[1]?.toLowerCase() ?? ''
   if (/^(wav|mp3|m4a|aac|ogg|oga|flac|webm|opus|aif|aiff)$/.test(ext)) return 'audio'
   if (/^(png|jpe?g|gif|webp|avif|heic|svg)$/.test(ext)) return 'image'
   if (/^(mp4|mov|m4v|mkv)$/.test(ext)) return 'video'
+  if (/^(glb|gltf)$/.test(ext)) return 'model'
   if (/^(json|txt|md|pdf|docx?)$/.test(ext)) return 'document'
   return 'other'
 }

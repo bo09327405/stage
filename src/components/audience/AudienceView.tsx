@@ -7,6 +7,7 @@ import { LiveLayer } from './LiveCamera'
 import { setListenOnly } from '../../services/audioSession'
 import { useAudienceChannel } from '../../hooks/useAudienceChannel'
 import { useVibrationCues } from '../../hooks/useVibrationCues'
+import { useXrPreload } from '../../hooks/useXrPreload'
 import { primeAudienceVoice, useAudienceVoice } from '../../services/audienceVoice'
 import { hapticMode, playVibration } from '../../services/vibration'
 import { audiencePushStatus, disableAudiencePush, enableAudiencePush, syncAudiencePush, type AudiencePushStatus } from '../../services/audiencePush'
@@ -80,6 +81,8 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
   const [entered, setEntered] = useState(stageAudio.isUnlocked)
   // Vibration cues and Pre-Wait reminders (motor on Android, Web Audio thumps on iPhone).
   useVibrationCues(showState, serverNow, audienceId, channel, entered)
+  // XR cues: fetch the standby scene's models and panorama now, so GO shows it at once (this group's cues only).
+  useXrPreload(showState, audienceId, channel)
   // Live voice from the operator to this group (receive-only; needs the page's tap to be allowed to play).
   const voice = useAudienceVoice(versionPath(show), audienceId, entered)
   // Live camera cue: once its Pre-Wait is over, a full-screen layer takes over this phone (camera or viewer).

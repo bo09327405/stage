@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import { useServerNow } from '../../hooks/useServerNow'
 import { stageAudio } from '../../services/audioEngine'
 import {
@@ -22,8 +22,12 @@ import { isYoutubeCue } from '../../utils/youtube'
 import { InteractiveUpload } from './InteractiveUpload'
 import { YouTubeCue } from './YouTubeCue'
 import { LayeredStage } from './LayeredStage'
+import { requestNextCue } from '../../services/xrEvents'
 import { hasVisualEdits } from '../../types/visual'
 import { VjStage } from '../vj/VjStage'
+
+// Three.js is a large download: only devices that are sent an XR cue fetch it.
+const XrPlayer = lazy(() => import('../xr/XrPlayer'))
 
 /**
  * Which visual instance owns this device's screen at `now`: the newest visual cue addressed to this
@@ -93,7 +97,7 @@ export function StageDisplay({
             animate={{ opacity: 1, transition: { duration: visual.cue.fadeInTime } }}
             exit={{ opacity: 0, transition: { duration: visual.cue.fadeOutTime } }}
           >
-            <VisualCue serverNow={serverNow} inst={visual} show={show} preview={preview && !previewSound} uploadMock={preview} now={now} frozen={showState.pausedAt != null} level={showState.muted ? 0 : (showState.masterVolume / 100) * dimGain(showState.dim, showState.dimDb)} audible={!preview || previewSound} />
+            <VisualCue serverNow={serverNow} audienceId={audienceId} inst={visual} show={show} preview={preview && !previewSound} uploadMock={preview} now={now} frozen={showState.pausedAt != null} level={showState.muted ? 0 : (showState.masterVolume / 100) * dimGain(showState.dim, showState.dimDb)} audible={!preview || previewSound} />
           </motion.div>
         ) : liveVj && !vjFailed ? (
           <motion.div key="live-vj" className="absolute inset-0" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -135,7 +139,7 @@ export function StageDisplay({
   )
 }
 
-function VisualCue({ inst, show, preview, uploadMock, now, frozen, level, audible, serverNow }: { serverNow: () => number; inst: ActiveCue; show: ShowRef; preview: boolean; uploadMock: boolean; now: number; frozen: boolean; level: number; audible: boolean }) {
+function VisualCue({ inst, show, preview, uploadMock, now, frozen, level, audible, serverNow, audienceId }: { serverNow: () => number; inst: ActiveCue; show: ShowRef; preview: boolean; uploadMock: boolean; now: number; frozen: boolean; level: number; audible: boolean; audienceId: string }) {
   const { cue } = inst
   // Layers / masks / grading / effects: composited on the GPU. Falls back to the plain picture if WebGL is missing.
   const [layerFailed, setLayerFailed] = useState(false)
@@ -148,6 +152,25 @@ function VisualCue({ inst, show, preview, uploadMock, now, frozen, level, audibl
   if ((cue.type === 'IMAGE' || cue.type === 'VIDEO') && hasVisualEdits(cue.visual) && !layerFailed && !isYoutubeCue(cue)) {
     const elapsed = Math.max(0, instanceClock(inst, now) - activeStartAt(inst)) / 1000
     return <LayeredStage cue={cue} visual={cue.visual} mode={uploadMock ? 'preview' : 'audience'} position={cue.mediaStartTime + elapsed} paused={frozen || inst.pausedAt != null} onError={() => setLayerFailed(true)} />
+  }
+  if (cue.type === 'AUDIENCE_XR') {
+    if (!cue.xr) return null
+    // Seconds into the cue on the show clock (standing still while the show, or this cue, is paused).
+    const frozenAt = inst.pausedAt ?? null
+    const clock = () => ((frozen ? now : frozenAt != null ? Math.min(frozenAt, serverNow()) : serverNow()) - activeStartAt(inst)) / 1000
+    return (
+      <Suspense fallback={null}>
+        <XrPlayer
+          scene={cue.xr}
+          clock={clock}
+          paused={frozen || inst.pausedAt != null}
+          mode={uploadMock ? 'preview' : 'audience'}
+          // Sounds go through the audio engine (already unlocked by the audience's tap, and under the master volume).
+          onAudio={(url) => stageAudio.playHit({ hitId: `xr:${url}`, url, volume: 100, firedAt: serverNow(), seq: Date.now() })}
+          onNextCue={(_objectId, interactionId) => void requestNextCue(versionPath(show), inst.instanceId, interactionId, audienceId)}
+        />
+      </Suspense>
+    )
   }
   switch (cue.type) {
     case 'IMAGE':

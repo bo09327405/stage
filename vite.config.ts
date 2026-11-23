@@ -76,7 +76,8 @@ export default defineConfig(({ mode, command }) => {
     optimizeDeps: { exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'] },
     server: {
       // Self-signed LAN cert (.cert/) so iPad Safari gets a secure context for the microphone.
-      https: existsSync('.cert/key.pem') ? { key: readFileSync('.cert/key.pem'), cert: readFileSync('.cert/cert.pem') } : undefined,
+      // DEV_HTTP=1 serves plain HTTP instead (the in-app preview pane does not trust the self-signed cert).
+      https: env.DEV_HTTP !== '1' && existsSync('.cert/key.pem') ?{ key: readFileSync('.cert/key.pem'), cert: readFileSync('.cert/cert.pem') } : undefined,
       // Allow ngrok tunnel hostnames (e.g. `npx ngrok http 5173`); Vite blocks unknown hosts by default.
       allowedHosts: ['.ngrok-free.app', '.ngrok-free.dev', '.ngrok.app', '.ngrok.io', '.trycloudflare.com', '.nip.io'],
       // The local TTS model (~215 MB, `npm run tts:setup`) never changes while developing.

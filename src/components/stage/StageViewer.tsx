@@ -1,5 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
 import { useStageMonitorAudio } from '../../hooks/useStageMonitorAudio'
+import { useXrPreload } from '../../hooks/useXrPreload'
 import type { useTheatreEngine } from '../../hooks/useTheatreEngine'
 import { stageMonitor, useStageMonitor, useVideoOwner } from '../../services/stageMonitor'
 import { activeList, cueTargets, type Cue } from '../../types/cue'
@@ -54,6 +55,8 @@ export function StageViewer({
   const { audience, channel } = monitor
   const groups = channelIds(showState.channels.count)
   const audio = useStageMonitorAudio(engine, show.projectId)
+  // Like an audience phone of the simulated group: the standby XR scene loads ahead of GO.
+  useXrPreload(showState, audience, channel || null)
   // The window outranks buttons for the engine's live (audible) video element.
   const ownsVideo = useVideoOwner(mini ? 1 : 2)
 

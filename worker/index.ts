@@ -46,6 +46,8 @@ const TYPES: Record<string, string> = {
   wav: 'audio/wav', mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg',
   flac: 'audio/flac', aif: 'audio/aiff', aiff: 'audio/aiff', webm: 'audio/webm', mp4: 'video/mp4', mov: 'video/quicktime',
   json: 'application/json', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
+  // 3D models for XR cues (a .gltf must be self-contained).
+  glb: 'model/gltf-binary', gltf: 'model/gltf+json',
 }
 const typeOf = (key: string) => TYPES[key.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream'
 /** Any signed-in user may add files to the shared Default folders (deleting stays admin-only). */
@@ -222,7 +224,7 @@ async function handle(req: Request, env: Env, url: URL): Promise<Response> {
     const body = await req.arrayBuffer()
     if (body.byteLength > MAX_UPLOAD) return json(413, { error: '檔案太大（上限 250 MB）' })
     const sent = req.headers.get('content-type') ?? ''
-    const contentType = /^(audio|video|image)\/[\w.+-]+$|^application\/json$/.test(sent) ? sent : typeOf(key)
+    const contentType = /^(audio|video|image|model)\/[\w.+-]+$|^application\/json$/.test(sent) ? sent : typeOf(key)
     await env.BUCKET.put(key, body, { httpMetadata: { contentType, ...(isLiveKey(key) ? { cacheControl: LIVE_CACHE } : {}) } })
     return json(200, { key, url: r2Url(key), bytes: body.byteLength, contentType })
   }
@@ -328,7 +330,7 @@ async function handle(req: Request, env: Env, url: URL): Promise<Response> {
     const allowed = filter === 'all' ? listed : (await Promise.all(listed.map(async (o) => ((await filter(o.key)) ? o : null)))).filter((o): o is (typeof listed)[number] => !!o)
     const items = allowed
       .filter((o) => !o.key.endsWith('/'))
-      .filter((o) => (kind === 'raw' ? typeOf(o.key) === 'application/json' : /^(audio|video|image)\//.test(typeOf(o.key))))
+      .filter((o) => (kind === 'raw' ? typeOf(o.key) === 'application/json' : /^(audio|video|image|model)\//.test(typeOf(o.key))))
       .map((o) => ({ ...o, name: o.key.split('/').pop()!, url: r2Url(o.key), contentType: typeOf(o.key) }))
     return json(200, { configured: true, items })
   }

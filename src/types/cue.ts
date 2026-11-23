@@ -5,8 +5,9 @@ import { normalizeVisual, type CueVisual } from './visual'
 import type { ExecutorRun } from './sequence'
 import type { CueTrigger } from './trigger'
 import { normalizeMix, type VjMix } from './vj'
+import { normalizeXr, type XrScene } from './xr'
 
-export type CueType = 'AUDIO' | 'VIDEO' | 'IMAGE' | 'TEXT' | 'INTERACTIVE_UPLOAD' | 'BLACKOUT' | 'VIBRATION' | 'VJ' | 'AUDIENCE_LIVE'
+export type CueType = 'AUDIO' | 'VIDEO' | 'IMAGE' | 'TEXT' | 'INTERACTIVE_UPLOAD' | 'BLACKOUT' | 'VIBRATION' | 'VJ' | 'AUDIENCE_LIVE' | 'AUDIENCE_XR'
 
 export const CUE_TYPE_LABELS: Record<CueType, string> = {
   AUDIO: '音訊',
@@ -18,6 +19,7 @@ export const CUE_TYPE_LABELS: Record<CueType, string> = {
   VIBRATION: '震動提示',
   VJ: 'VJ 剪輯觸發',
   AUDIENCE_LIVE: '觀眾直播',
+  AUDIENCE_XR: '觀眾體驗 / XR 實境',
 }
 
 /** Compact glyphs for list rows and type pickers. */
@@ -31,6 +33,7 @@ export const CUE_TYPE_GLYPHS: Record<CueType, string> = {
   VIBRATION: '📳',
   VJ: '🎬',
   AUDIENCE_LIVE: '🔴',
+  AUDIENCE_XR: '🥽',
 }
 
 export type UploadKind = 'photo' | 'audio' | 'both' | 'video' | 'any'
@@ -151,6 +154,15 @@ export interface Cue {
   liveOperatorId: string
   liveFallback: LiveFallback
 
+  // — Audience XR experience (type AUDIENCE_XR; runs on the devices of `targetChannels` only) —
+  /** The 360° panorama / 3D stage / passthrough scene (types/xr.ts); null on every other cue type. */
+  xr: XrScene | null
+  /**
+   * A scene of the project's XR library (projects/{pid}/xr/{id}) to play instead of a cue-only one; '' = none.
+   * The console keeps `xr` filled with that scene's current content, so library edits reach every bound cue.
+   */
+  xrSceneId: string
+
   // — After this cue starts —
   followMode: FollowMode
   /** Delay before the follow action fires. */
@@ -221,6 +233,8 @@ export const DEFAULT_CUE: Omit<Cue, 'id'> = {
   liveOperatorMode: 'first',
   liveOperatorId: '',
   liveFallback: 'black',
+  xr: null,
+  xrSceneId: '',
   followMode: 'none',
   postWaitTime: 0,
   autoStopAfter: 0,
@@ -259,6 +273,7 @@ export function normalizeCue(raw: Omit<Partial<Cue>, 'stopOthers'> & LegacyCueFi
     targetIds: Object.values(rest.targetIds ?? {}),
     visual: normalizeVisual(rest.visual),
     vj: normalizeMix(rest.vj),
+    xr: normalizeXr(rest.xr),
     // RTDB drops empty arrays: a cue with no stored list is for every group.
     targetChannels: (Object.values(rest.targetChannels ?? {}) as string[]).length ? (Object.values(rest.targetChannels ?? {}) as string[]) : ['all'],
     triggers: Object.values(rest.triggers ?? {}),

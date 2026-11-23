@@ -15,13 +15,14 @@ import { ChannelChips } from './ChannelChips'
 import { ChannelOverview } from './ChannelOverview'
 import { ChannelSettings } from './ChannelSettings'
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useCueList } from '../../hooks/useCueList'
 import { useHits } from '../../hooks/useHits'
 import { useServerNow } from '../../hooks/useServerNow'
 import { useTheatreEngine } from '../../hooks/useTheatreEngine'
 import { usePresence } from '../../services/presence'
 import { useLiveDirector } from '../../hooks/useLiveDirector'
+import { useXrDirector } from '../../services/xrEvents'
 import { recheckModeration, setUploadHidden, setUploadModeration, useProjectUploads } from '../../services/uploads'
 import { cueFromUpload } from '../../utils/uploadCue'
 import { saveAsNewVersion, setLivePointer, touchProject, useLivePointer } from '../../services/projects'
@@ -84,6 +85,9 @@ const writePref = (key: string, value: string) => {
   }
 }
 
+// The XR workspace brings Three.js with it: loaded when it is first opened.
+const XrWorkspace = lazy(() => import('../xr/XrWorkspace'))
+
 type EditorState = { mode: 'edit'; cueId: string } | { mode: 'create' } | null
 
 const ignore = () => {}
@@ -124,6 +128,8 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   const presence = usePresence(basePath)
   const live = useLivePointer()
   const [editor, setEditor] = useState<EditorState>(null)
+  // XR 工作區 (the project's XR scene library), optionally opened on one scene.
+  const [xrOpen, setXrOpen] = useState<{ sceneId: string | null } | null>(null)
   // Phone / portrait iPad: Go Button layout (GO bar on top, DIM + Master rail, inbox as a full-screen sheet).
   const compact = useGoButtonLayout()
   const [mobileSheet, setMobileSheet] = useState(false)
@@ -287,6 +293,8 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
   }
 
   // Same state machine as the surface GO: with nothing selected, GO selects the first cue.
+  // XR scenes may let the audience trigger the next cue (an object's interaction): the console presses GO for them.
+  useXrDirector({ basePath, showState: engine.showState, go: () => void engine.go().catch(ignore), enabled: true })
   const handleGo = () => {
     engine.go().catch(ignore)
   }
@@ -433,6 +441,14 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
           )}
           <FullscreenButton />
           <StudioMenu show={show} user={user} readOnly={lock.readOnly} />
+          <button
+            onClick={() => setXrOpen({ sceneId: null })}
+            className="flex min-h-10 items-center gap-1.5 rounded-lg bg-white/[0.06] px-3 text-xs text-white/70 hover:bg-white/10 hover:text-white"
+            title="XR 工作區：編輯這個專案的 360° 全景 / 3D 舞台 / MR 場景，供 XR Cue 綁定"
+            data-xr-workspace-open
+          >
+            🥽<span className="hidden sm:inline">XR</span>
+          </button>
           <IntercomButton intercom={intercom} onClick={() => setIntercomOpen(!intercomOpen)} />
           <button
             onClick={() => setVjOpen(true)}
@@ -589,6 +605,11 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
         <CallFlash intercom={intercom} />
         <AudienceTalkGate intercom={intercom} />
 
+        {xrOpen && (
+          <Suspense fallback={null}>
+            <XrWorkspace projectId={show.projectId} projectName={projectName} inbox={uploads} cues={cues} readOnly={lock.readOnly} initialSceneId={xrOpen.sceneId} onClose={() => setXrOpen(null)} />
+          </Suspense>
+        )}
         <AnimatePresence>
           {vjOpen && <VjDeckPanel projectId={show.projectId} projectName={projectName} decks={vjDecks} ctl={vj} engine={engine} onClose={() => setVjOpen(false)} />}
         </AnimatePresence>
@@ -903,6 +924,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                     projectId={show.projectId}
                     projectName={projectName}
                     onClose={() => setEditor(null)}
+                    onOpenXr={(sceneId) => setXrOpen({ sceneId })}
                     onSave={async (draft) => {
                       const saved = await addCue(draft)
                       touchProject(show.projectId).catch(ignore)
@@ -920,6 +942,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                     projectId={show.projectId}
                     projectName={projectName}
                     onClose={() => setEditor(null)}
+                    onOpenXr={(sceneId) => setXrOpen({ sceneId })}
                     onSave={async (draft) => {
                       await saveCue(editingCue.id, draft)
                       touchProject(show.projectId).catch(ignore)

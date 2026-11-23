@@ -85,6 +85,14 @@
                 }
               }
             },
+            "xrEvents": {
+              "$iid": {
+                "$xid": {
+                  ".write": "((auth != null && (root.child('projectIndex').child($pid).child('owner/uid').val() == auth.uid || root.child('projectIndex').child($pid).child('collaborators').child(auth.uid).exists())) || !data.exists())",
+                  ".validate": "newData.val() == null || (newData.hasChildren(['aid', 'at']) && newData.child('aid').isString() && newData.child('aid').val().length < 40 && $iid.length < 80 && $xid.length < 40)"
+                }
+              }
+            },
             "presence": {
               "$aid": {
                 ".write": true,

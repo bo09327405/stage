@@ -38,9 +38,9 @@ interface InboxPickerModalProps {
 
 type Source = 'project' | 'default' | 'audience'
 
-const ACCEPT: Record<MediaKind, string> = { image: 'image/*', audio: 'audio/*', video: 'video/*' }
+const ACCEPT: Record<MediaKind, string> = { image: 'image/*', audio: 'audio/*', video: 'video/*', model: '.glb,.gltf,model/gltf-binary,model/gltf+json' }
 
-const KIND_ICON: Record<MediaKind, string> = { image: '🖼', audio: '♪', video: '▶' }
+const KIND_ICON: Record<MediaKind, string> = { image: '🖼', audio: '♪', video: '▶', model: '🧊' }
 
 /**
  * Pick a file for a cue: the project's own media and the shared Default folder (theatre/cues/Default,
@@ -113,8 +113,9 @@ function PickerBody({ projectId, projectName, uploads, cues, lockKind, onPick, o
     shared.reload()
   }
   // Audience uploads: only approved, visible ones can go into a cue.
-  const audienceKind = lockKind
-  const audienceCount = (uploads ?? []).filter((u) => (!audienceKind || u.kind === audienceKind) && isApproved(u) && !u.hidden).length
+  // (The audience never uploads 3D models: that source is hidden when a model is asked for.)
+  const audienceKind = lockKind === 'model' ? undefined : lockKind
+  const audienceCount = lockKind === 'model' ? 0 : (uploads ?? []).filter((u) => (!audienceKind || u.kind === audienceKind) && isApproved(u) && !u.hidden).length
   const [source, setSource] = useState<Source>(projectFiles.length === 0 && audienceCount > 0 ? 'audience' : 'project')
   const [audienceScope, setAudienceScope] = useState<'project' | 'all'>('project')
 
@@ -125,7 +126,7 @@ function PickerBody({ projectId, projectName, uploads, cues, lockKind, onPick, o
           <div>
             <h2 className="text-lg font-semibold">選取檔案</h2>
             <p className="text-xs text-white/40">
-              此專案的檔案與 Default 共用素材{lockKind ? ` · 僅${{ image: '圖片', audio: '音訊', video: '影片' }[lockKind]}` : ''}
+              此專案的檔案與 Default 共用素材{lockKind ? ` · 僅${KIND_LABEL[lockKind]}` : ''}
             </p>
           </div>
           <div className="flex items-center gap-1">
@@ -152,14 +153,14 @@ function PickerBody({ projectId, projectName, uploads, cues, lockKind, onPick, o
           </div>
         </div>
         <Segmented<Source>
-          columns={3}
+          columns={lockKind === 'model' ? 2 : 3}
           value={source}
           onChange={setSource}
-          options={[
+          options={([
             { id: 'project', label: `📁 專案素材 ${projectFiles.length}`, description: `R2 · ${cueMediaFolder(projectName, projectId)}` },
             { id: 'default', label: `📌 Default 共用 ${shared.media ? defaultFiles.length : '…'}`, description: 'R2 · 所有專案共用的音效 / 音樂' },
             { id: 'audience', label: `📥 觀眾上傳 ${audienceCount}`, description: 'Cloudinary · 此專案或所有專案的觀眾作品' },
-          ]}
+          ] as const).filter((o) => o.id !== 'audience' || lockKind !== 'model')}
         />
         {source !== 'audience' && (
           <R2PathBar
@@ -453,7 +454,7 @@ function ProjectFolder({
   )
 }
 
-const KIND_LABEL: Record<MediaKind, string> = { image: '圖片', audio: '音訊', video: '影片' }
+const KIND_LABEL: Record<MediaKind, string> = { image: '圖片', audio: '音訊', video: '影片', model: '3D 模型' }
 
 /** Use a file by its R2 path or URL (typed or pasted). */
 function R2PathBar({ lockKind, onPick }: { lockKind?: MediaKind; onPick: (m: ProjectMedia) => void }) {

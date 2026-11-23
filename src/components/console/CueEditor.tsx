@@ -1,5 +1,5 @@
 import { isAdmin, useAuth } from '../../services/auth'
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { studioMixUrl } from '../../studio/cueMix'
 import type { CloudinaryUploadResult } from '../../services/cloudinary'
 import { formatTime } from '../../hooks/useServerNow'
@@ -47,6 +47,11 @@ import { recordProjectMedia, recordSharedMedia } from '../../services/mediaLibra
 import { InboxPickerModal } from './InboxPickerModal'
 import { StudioBinding } from './StudioBinding'
 import { WaveformTrimmer } from './WaveformTrimmer'
+import { XR_MODE_LABELS, newXrScene, xrProblem } from '../../types/xr'
+import { createXrScene, useXrScenes } from '../../services/xrScenes'
+
+// The XR editor brings Three.js with it: loaded only when an XR cue is opened.
+const XrEditor = lazy(() => import('../xr/XrEditor'))
 
 type Draft = Omit<Cue, 'id'>
 
@@ -81,7 +86,7 @@ function stableStringify(value: unknown): string {
 }
 type TabId = 'basic' | 'media' | 'visual' | 'start' | 'after' | 'target' | 'triggers'
 
-const TYPES: CueType[] = ['AUDIO', 'VIDEO', 'IMAGE', 'TEXT', 'INTERACTIVE_UPLOAD', 'BLACKOUT', 'VIBRATION', 'VJ', 'AUDIENCE_LIVE']
+const TYPES: CueType[] = ['AUDIO', 'VIDEO', 'IMAGE', 'TEXT', 'INTERACTIVE_UPLOAD', 'BLACKOUT', 'VIBRATION', 'VJ', 'AUDIENCE_LIVE', 'AUDIENCE_XR']
 const UPLOAD_ACCEPT: Partial<Record<CueType, string>> = {
   AUDIO: 'audio/*',
   VIDEO: 'video/*',
@@ -116,6 +121,8 @@ interface CueEditorProps {
   onSave: (draft: Draft) => Promise<unknown>
   onDelete?: () => void
   onClose: () => void
+  /** Open the XR workspace (on a scene, or its list). */
+  onOpenXr?: (sceneId: string | null) => void
 }
 
 /** Go Button-style cue inspector. Parent should key it by cue id so the draft resets per cue. */
@@ -131,6 +138,7 @@ export function CueEditor({
   onSave,
   onDelete,
   onClose,
+  onOpenXr,
 }: CueEditorProps) {
   const [draft, setDraft] = useState<Draft>(initial)
   // When the stored cue changes underneath (undo / redo, another device) and nothing has been edited
@@ -159,6 +167,12 @@ export function CueEditor({
   // AUDIO cues can play a DAW Studio project's live mix instead of a file.
   const [audioSource, setAudioSource] = useState<'file' | 'studio'>(initial.studioId ? 'studio' : 'file')
   const studioMode = draft.type === 'AUDIO' && audioSource === 'studio'
+  // XR cues play a scene of the project's XR library (bound by id), or one that belongs to this cue alone.
+  const xrLibrary = useXrScenes(projectId).scenes
+  const [xrSource, setXrSource] = useState<'library' | 'own'>(initial.xrSceneId ? 'library' : 'own')
+  const xrBound = draft.type === 'AUDIENCE_XR' && xrSource === 'library'
+  const boundScene = xrBound ? (xrLibrary?.find((s) => s.id === draft.xrSceneId) ?? null) : null
+  const [xrBusy, setXrBusy] = useState(false)
   const usesUrl = (media || draft.type === 'IMAGE') && !studioMode
   // Studio cues draw the waveform of the project's rendered mix (rendered on this device, in memory).
   const studioMix = useStudioMixUrl(studioMode ? projectId : '', studioMode ? draft.studioId : '')
@@ -203,6 +217,14 @@ export function CueEditor({
       setTab('media')
       return setError('此類型需要媒體檔案或 URL')
     }
+    if (xrBound && !draft.xrSceneId) {
+      setTab('media')
+      return setError('請選擇要綁定的 XR 場景，或改用「此 Cue 專用場景」')
+    }
+    if (draft.type === 'AUDIENCE_XR' && xrProblem(draft.xr)) {
+      setTab('media')
+      return setError(xrBound ? `綁定的 XR 場景還不能播放：${xrProblem(draft.xr)}（請到 XR 工作區補上）` : xrProblem(draft.xr))
+    }
     if (draft.targetMode === 'selected' && draft.targetIds.length === 0) {
       setTab('target')
       return setError('已選擇「指定觀眾」，請至少加入一個識別碼')
@@ -215,6 +237,9 @@ export function CueEditor({
         title: draft.title.trim(),
         targetUrl: usesUrl ? normalizeMediaInput(draft.targetUrl) : '',
         studioId: studioMode ? draft.studioId : '',
+        // Only XR cues carry a scene (keeps every other cue record small).
+        xr: draft.type === 'AUDIENCE_XR' ? draft.xr : null,
+        xrSceneId: xrBound ? draft.xrSceneId : '',
       })
     } catch (err) {
       setError((err as Error).message)
@@ -250,7 +275,7 @@ export function CueEditor({
           onChange={setTab}
           tabs={[
             { id: 'basic', label: '基本' },
-            { id: 'media', label: draft.type === 'VJ' ? 'VJ 混音' : '媒體' },
+            { id: 'media', label: draft.type === 'VJ' ? 'VJ 混音' : draft.type === 'AUDIENCE_XR' ? 'XR 場景' : '媒體' },
             ...(draft.type === 'IMAGE' || (draft.type === 'VIDEO' && !isYoutubeCue(draft)) ? [{ id: 'visual' as const, label: draft.visual ? '視覺 ●' : '視覺' }] : []),
             { id: 'start', label: '開始時' },
             { id: 'after', label: '開始後' },
@@ -297,7 +322,9 @@ export function CueEditor({
                   <button
                     key={t}
                     type="button"
-                    onClick={() => set('type', t)}
+                    // An XR cue starts with an empty scene (kept if the type is switched away and back before saving).
+                    onClick={() => setDraft((d) => ({ ...d, type: t, xr: t === 'AUDIENCE_XR' ? (d.xr ?? newXrScene()) : d.xr }))}
+                    data-cue-type={t}
                     className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-lg border text-xs transition ${
                       draft.type === t
                         ? 'border-accent bg-accent/15 text-white'
@@ -350,7 +377,112 @@ export function CueEditor({
 
         {tab === 'media' && draft.type === 'VJ' && <VjCueEditor projectId={projectId} value={draft.vj} onChange={(vj) => set('vj', vj)} />}
 
-        {tab === 'media' && draft.type !== 'VJ' && (
+        {tab === 'media' && draft.type === 'AUDIENCE_XR' && (
+          <div className="space-y-3" data-xr-cue-editor>
+            <p className="rounded-lg bg-white/[0.03] p-3 text-xs leading-relaxed text-white/50">
+              GO 時，「派發」分頁所選頻道的觀眾手機與 Stage 模擬器會進入這個 XR 體驗（{XR_MODE_LABELS[(draft.xr ?? newXrScene()).mode]}）；其他頻道不受影響。STANDBY 時先在背景預載，STOP 或下一個畫面 Cue 取代時自動釋放記憶體。
+            </p>
+            <div className="grid grid-cols-2 gap-1 rounded-lg bg-black/40 p-1" role="group" aria-label="XR 場景來源" data-xr-source>
+              {(
+                [
+                  ['library', '🥽 綁定 XR 工作區的場景'],
+                  ['own', '✏️ 此 Cue 專用場景'],
+                ] as const
+              ).map(([id, label]) => (
+                <button key={id} type="button" onClick={() => setXrSource(id)} aria-pressed={xrSource === id} className={`min-h-9 rounded-md text-xs font-medium ${xrSource === id ? 'bg-white/15 text-white' : 'text-white/50 hover:text-white/80'}`} data-xr-source-option={id}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {xrBound ? (
+              <div className="space-y-3" data-xr-binding>
+                <label className="block">
+                  <Label hint={xrLibrary ? `${xrLibrary.length} 個場景` : '載入中…'}>XR 場景</Label>
+                  <select
+                    className={fieldClass}
+                    value={draft.xrSceneId}
+                    aria-label="綁定的 XR 場景"
+                    onChange={(e) => {
+                      const scene = xrLibrary?.find((s) => s.id === e.target.value)
+                      setDraft((d) => ({ ...d, xrSceneId: e.target.value, xr: scene ? scene.scene : d.xr, title: d.title || scene?.name || '' }))
+                    }}
+                    data-xr-scene-select
+                  >
+                    <option value="">（請選擇）</option>
+                    {draft.xrSceneId && xrLibrary && !boundScene && <option value={draft.xrSceneId}>（場景已刪除：沿用這個 Cue 保留的內容）</option>}
+                    {xrLibrary?.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} · {XR_MODE_LABELS[s.scene.mode]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {boundScene && (
+                  <p className="rounded-lg bg-white/[0.03] p-3 text-xs leading-relaxed text-white/50">
+                    {XR_MODE_LABELS[boundScene.scene.mode]} · {boundScene.scene.objects.length} 個 3D 物件{boundScene.scene.pano.url ? ' · 有全景' : ''}。在 XR 工作區修改這個場景後，所有綁定它的 Cue 都會播放最新內容（已在 STANDBY 的 Cue 需重新選取一次）。
+                  </p>
+                )}
+                <button type="button" onClick={() => onOpenXr?.(draft.xrSceneId || null)} disabled={!onOpenXr} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-accent/50 bg-accent/10 text-xs font-medium text-accent hover:bg-accent hover:text-white disabled:opacity-40" data-xr-open-workspace>
+                  🥽 {boundScene ? '在 XR 工作區編輯這個場景' : '開啟 XR 工作區（新增 / 管理場景）'}
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/45" role="group" aria-label="上傳位置">
+                  <span>上傳到</span>
+                  {(
+                    [
+                      [false, `📁 本專案（${cueMediaFolder(projectName, projectId).split('/').at(-1)}）`],
+                      [true, '📌 Default 共用'],
+                    ] as const
+                  ).filter(([shared]) => !shared || admin).map(([shared, label]) => (
+                    <button key={label} type="button" onClick={() => setUploadShared(shared)} aria-pressed={uploadShared === shared} className={`min-h-7 rounded-md px-2 ${uploadShared === shared ? 'bg-white/15 text-white' : 'hover:text-white/80'}`}>
+                      {label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    disabled={xrBusy || !draft.xr}
+                    onClick={async () => {
+                      // Move this cue's scene into the library, so other cues can use it and it opens in the workspace.
+                      setXrBusy(true)
+                      setError(null)
+                      try {
+                        const id = await createXrScene(projectId, draft.title || `Q${draft.cueNumber} XR 場景`, draft.xr ?? newXrScene())
+                        setDraft((d) => ({ ...d, xrSceneId: id }))
+                        setXrSource('library')
+                      } catch (err) {
+                        setError((err as Error).message)
+                      } finally {
+                        setXrBusy(false)
+                      }
+                    }}
+                    className="ml-auto min-h-7 rounded-md bg-white/[0.07] px-2 text-white/75 hover:bg-white/15 disabled:opacity-40"
+                    title="把這個場景存進 XR 工作區，之後可讓多個 Cue 共用"
+                    data-xr-save-to-library
+                  >
+                    {xrBusy ? '儲存中…' : '⇪ 另存到 XR 工作區'}
+                  </button>
+                </div>
+                <Suspense fallback={<p className="rounded-lg bg-white/[0.03] p-6 text-center text-xs text-white/40">載入 XR 編輯器…</p>}>
+                  <XrEditor
+                    value={draft.xr ?? newXrScene()}
+                    onChange={(xr) => set('xr', xr)}
+                    onTitle={(name) => setDraft((d) => (d.title ? d : { ...d, title: name }))}
+                    projectId={projectId}
+                    projectName={projectName}
+                    inbox={inbox}
+                    allCues={allCues}
+                    uploadFolder={uploadShared ? DEFAULT_MEDIA_FOLDER : cueMediaFolder(projectName, projectId)}
+                    uploadShared={uploadShared}
+                  />
+                </Suspense>
+              </>
+            )}
+          </div>
+        )}
+
+        {tab === 'media' && draft.type !== 'VJ' && draft.type !== 'AUDIENCE_XR' && (
           <>
             {draft.type === 'AUDIO' && (
               <div className="grid grid-cols-2 gap-1 rounded-lg bg-black/40 p-1" role="group" aria-label="音訊來源" data-audio-source>

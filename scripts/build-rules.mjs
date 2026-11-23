@@ -149,6 +149,16 @@ const rules = {
                 sfu: { '.read': true, '.write': true, '.validate': "newData.val() == null || (newData.hasChildren(['sessionId']) && newData.child('sessionId').isString() && newData.child('sessionId').val().length < 100)" },
               },
             },
+            // XR "next cue" requests: an audience device asks once per interaction of a running cue (first one
+            // wins, never changed afterwards); the console (member) claims it, presses GO and cleans up.
+            xrEvents: {
+              $iid: {
+                $xid: {
+                  '.write': or(member, '!data.exists()'),
+                  '.validate': "newData.val() == null || (newData.hasChildren(['aid', 'at']) && newData.child('aid').isString() && newData.child('aid').val().length < 40 && $iid.length < 80 && $xid.length < 40)",
+                },
+              },
+            },
             presence: {
               $aid: {
                 '.write': true,

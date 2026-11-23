@@ -16,7 +16,7 @@ interface Row extends Omit<FileActivity, 'action'> {
   file: ManagedFile | null
 }
 
-const TYPE_LABEL: Record<FileType, string> = { audio: 'Audio', image: 'Image', video: 'Video', document: 'Script / 專案檔', other: '其他' }
+const TYPE_LABEL: Record<FileType, string> = { audio: 'Audio', image: 'Image', video: 'Video', model: '3D 模型', document: 'Script / 專案檔', other: '其他' }
 const ACTION_STYLE: Record<Row['action'], string> = {
   upload: 'bg-go/15 text-go',
   link: 'bg-accent/15 text-accent',
