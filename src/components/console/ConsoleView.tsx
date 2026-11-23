@@ -911,7 +911,7 @@ export function ConsoleView({ show, projectName, versionName, onBack, onOpenVers
                 role="dialog"
                 aria-modal="true"
                 aria-label="Cue 編輯"
-                className="relative h-[100dvh] w-full max-w-2xl overflow-hidden border border-line bg-[#0b0b0d] shadow-2xl sm:h-[90dvh] sm:rounded-2xl"
+                className="relative h-[100dvh] w-full max-w-2xl overflow-hidden border border-line bg-[#0b0b0d] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-2xl sm:h-[90dvh] sm:rounded-2xl sm:pt-0 sm:pb-0"
               >
                 {editor.mode === 'create' ? (
                   <CueEditor

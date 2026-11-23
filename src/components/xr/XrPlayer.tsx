@@ -657,7 +657,7 @@ export default function XrPlayer({
                 e.stopPropagation()
                 api.current?.scan()
               }}
-              className={`${chip} absolute top-[max(0.9rem,calc(env(safe-area-inset-top)+0.4rem))] right-3 min-h-10 px-3.5 text-xs`}
+              className={`${chip} absolute top-[max(0.9rem,calc(env(safe-area-inset-top)+0.4rem))] right-3 min-h-11 px-4 text-sm`}
               data-xr-replace
             >
               🔄 重新定位
@@ -680,7 +680,7 @@ export default function XrPlayer({
             <div className="absolute inset-x-3 bottom-[max(5rem,calc(env(safe-area-inset-bottom)+4.5rem))] mx-auto max-w-md rounded-2xl border border-white/25 bg-black/80 p-4 shadow-2xl backdrop-blur-xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={dialog.title} data-xr-dialog>
               <span className="text-[11px] font-bold tracking-widest text-standby">{dialog.title}</span>
               <p className="mt-1 text-base leading-relaxed whitespace-pre-line text-white">{dialog.text || '…'}</p>
-              <button type="button" onClick={() => setDialog(null)} className="mt-3 min-h-10 w-full rounded-lg bg-white/15 text-sm font-semibold text-white active:bg-white/25">
+              <button type="button" onClick={() => setDialog(null)} className="mt-3 min-h-12 w-full rounded-lg bg-white/15 text-base font-semibold text-white active:bg-white/25">
                 關閉
               </button>
             </div>
@@ -703,7 +703,7 @@ export default function XrPlayer({
                 </button>
               )}
               {gyro === 'ask' && !placing && (
-                <button type="button" onClick={askGyro} className={`${chip} min-h-11 px-5 text-xs`} data-xr-gyro="ask">
+                <button type="button" onClick={askGyro} className={`${chip} min-h-12 px-6 text-sm`} data-xr-gyro="ask">
                   📱 點一下，轉動手機環視
                 </button>
               )}

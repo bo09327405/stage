@@ -120,7 +120,7 @@ export default function XrWorkspace({
   const smallButton = 'flex h-7 w-7 shrink-0 items-center justify-center rounded text-xs text-white/40 hover:bg-white/10 hover:text-white disabled:opacity-30'
 
   return createPortal(
-    <div className="fixed inset-0 z-40 flex flex-col bg-[#101114] text-white" role="dialog" aria-label="XR 工作區" data-xr-workspace>
+    <div className="fixed inset-0 z-40 flex flex-col bg-[#101114] text-white pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]" role="dialog" aria-label="XR 工作區" data-xr-workspace>
       <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2.5">
         <span className="text-sm font-semibold">🥽 XR 工作區</span>
         <span className="truncate text-xs text-white/40">{projectName}</span>

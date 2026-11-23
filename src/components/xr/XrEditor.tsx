@@ -50,9 +50,9 @@ const ASSET_TABS: { id: AssetTab; label: string; accept: string; hint: string }[
   { id: 'image', label: '🖼 2D 貼圖 / UI', accept: 'image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp', hint: '拖到視口或點一下成為平面圖片' },
 ]
 
-const inputClass = 'h-8 w-full min-w-0 rounded-md border border-line bg-black/40 px-2 text-xs text-white outline-none focus:border-accent/80 pointer-coarse:h-10 pointer-coarse:text-sm'
-const buttonClass = 'flex min-h-8 items-center justify-center gap-1 rounded-md border border-line bg-white/[0.04] px-2.5 text-[11px] font-medium text-white/75 hover:bg-white/10 hover:text-white disabled:opacity-40 pointer-coarse:min-h-10'
-const segment = (on: boolean, accent = false) => `min-h-7 rounded px-2 text-[11px] font-medium ${on ? (accent ? 'bg-accent/30 text-white' : 'bg-white/15 text-white') : 'text-white/50 hover:text-white/80'}`
+const inputClass = 'h-8 w-full min-w-0 rounded-md border border-line bg-black/40 px-2 text-xs text-white outline-none focus:border-accent/80 pointer-coarse:h-11 pointer-coarse:text-base'
+const buttonClass = 'flex min-h-8 items-center justify-center gap-1 rounded-md border border-line bg-white/[0.04] px-2.5 text-[11px] font-medium text-white/75 hover:bg-white/10 hover:text-white disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:text-xs'
+const segment = (on: boolean, accent = false) => `min-h-7 flex-1 rounded px-2 text-[11px] font-medium whitespace-nowrap pointer-coarse:min-h-10 pointer-coarse:text-xs ${on ? (accent ? 'bg-accent/30 text-white' : 'bg-white/15 text-white') : 'text-white/50 hover:text-white/80'}`
 
 /** A small numeric field: commits while typing when the text is a number, and tidies itself on blur. */
 function Num({ label, value, onChange, step = 0.1, min, max, suffix, title }: { label: string; value: number; onChange: (v: number) => void; step?: number; min?: number; max?: number; suffix?: string; title?: string }) {
@@ -330,20 +330,19 @@ export default function XrEditor({
 
   /* ---------- viewport ---------- */
 
-  const viewportPane = (
-    <div className={`flex min-h-0 flex-col gap-2 ${wide ? 'flex-1' : ''}`} data-xr-viewport-pane>
+  const toolbarEl = (
       <div className="flex flex-wrap items-center gap-1.5">
         {preview ? (
           <>
             <span className="rounded-md bg-go/20 px-2.5 py-1.5 text-[11px] font-semibold text-go">▶ 預覽中 · 觀眾視角</span>
-            <button type="button" onClick={() => setPreview({ t0: performance.now() })} className={`${buttonClass} min-h-7`} title="從 Cue 開始的那一刻重播（時間軸與互動都重來）" data-xr-preview-restart>
+            <button type="button" onClick={() => setPreview({ t0: performance.now() })} className={`${buttonClass} min-h-7 pointer-coarse:min-h-10`} title="從 Cue 開始的那一刻重播（時間軸與互動都重來）" data-xr-preview-restart>
               ↺ 重新開始
             </button>
             <span className="text-[10px] text-white/40">拖曳或轉動手機環視 · 點擊 / 注視物件測試互動</span>
           </>
         ) : (
           <>
-            <div className="flex rounded-md bg-black/40 p-0.5" role="group" aria-label="預覽視角">
+            <div className="flex min-w-[11rem] flex-1 rounded-md bg-black/40 p-0.5 sm:flex-none" role="group" aria-label="預覽視角">
               {(
                 [
                   ['orbit', '🎥 場景'],
@@ -357,29 +356,29 @@ export default function XrEditor({
             </div>
             {view === 'orbit' && (
               <>
-                <div className="flex rounded-md bg-black/40 p-0.5" role="group" aria-label="Gizmo 工具">
+                <div className="flex min-w-full flex-1 rounded-md bg-black/40 p-0.5 sm:min-w-0 sm:flex-none" role="group" aria-label="Gizmo 工具">
                   {TOOLS.map((t) => (
                     <button key={t.id} type="button" onClick={() => setTool(t.id)} aria-pressed={tool === t.id} title={t.hint} className={segment(tool === t.id, true)} data-xr-tool={t.id}>
                       {t.label}
                     </button>
                   ))}
                 </div>
-                <button type="button" onClick={() => setSnap((s) => !s)} aria-pressed={snap} className={`${buttonClass} min-h-7 ${snap ? 'border-accent/60 bg-accent/20 text-white' : ''}`} title="網格對齊：移動 0.25 m、旋轉 15°、縮放 0.1 倍" data-xr-snap>
+                <button type="button" onClick={() => setSnap((s) => !s)} aria-pressed={snap} className={`${buttonClass} min-h-7 pointer-coarse:min-h-10 ${snap ? 'border-accent/60 bg-accent/20 text-white' : ''}`} title="網格對齊：移動 0.25 m、旋轉 15°、縮放 0.1 倍" data-xr-snap>
                   🧲 對齊
                 </button>
-                <div className="flex rounded-md bg-black/40 p-0.5" role="group" aria-label="鏡頭視圖">
+                <div className="flex min-w-[10rem] flex-1 rounded-md bg-black/40 p-0.5 sm:flex-none" role="group" aria-label="鏡頭視圖">
                   {CAMERAS.map((c) => (
                     <button key={c.id} type="button" onClick={() => viewport.current?.setCamera(c.id)} className={segment(false)} data-xr-camera-preset={c.id}>
                       {c.label}
                     </button>
                   ))}
                 </div>
-                <button type="button" onClick={() => viewport.current?.focus(selectedId)} className={`${buttonClass} min-h-7`} title="把鏡頭對準選取的物件（沒選取時為全部物件）" data-xr-focus>
+                <button type="button" onClick={() => viewport.current?.focus(selectedId)} className={`${buttonClass} min-h-7 pointer-coarse:min-h-10`} title="把鏡頭對準選取的物件（沒選取時為全部物件）" data-xr-focus>
                   🎯 對焦
                 </button>
               </>
             )}
-            <button type="button" onClick={() => setPlaying((p) => !p)} aria-pressed={playing} className={`${buttonClass} min-h-7`} title="編輯時是否播放動畫與影片" data-xr-play>
+            <button type="button" onClick={() => setPlaying((p) => !p)} aria-pressed={playing} className={`${buttonClass} min-h-7 pointer-coarse:min-h-10`} title="編輯時是否播放動畫與影片" data-xr-play>
               {playing ? '⏸ 動畫' : '▶ 動畫'}
             </button>
           </>
@@ -388,19 +387,22 @@ export default function XrEditor({
           type="button"
           onClick={() => setPreview((p) => (p ? null : { t0: performance.now() }))}
           aria-pressed={!!preview}
-          className={`${buttonClass} ml-auto min-h-7 ${preview ? 'border-go/60 bg-go/20 text-go' : 'border-accent/50 bg-accent/10 text-accent'}`}
+          className={`${buttonClass} ml-auto min-h-7 pointer-coarse:min-h-10 ${preview ? 'border-go/60 bg-go/20 text-go' : 'border-accent/50 bg-accent/10 text-accent'}`}
           title="鎖定編輯控制器，以觀眾視角測試時間軸與互動"
           data-xr-preview
         >
           {preview ? '✎ 回到編輯' : '▶ 預覽'}
         </button>
         {!workspace && (
-          <button type="button" onClick={() => setExpanded((x) => !x)} className={`${buttonClass} min-h-7`} data-xr-expand>
+          <button type="button" onClick={() => setExpanded((x) => !x)} className={`${buttonClass} min-h-7 pointer-coarse:min-h-10`} data-xr-expand>
             {expanded ? '✕ 收合' : '⛶ 放大編輯'}
           </button>
         )}
       </div>
-      <div className={`overflow-hidden rounded-lg ${wide ? 'min-h-0 flex-1' : 'aspect-[4/3] w-full'}`}>
+  )
+
+  const canvasEl = (
+      <div className={`overflow-hidden rounded-lg ${wide ? 'h-full min-h-0' : 'aspect-[4/3] w-full'}`}>
         {preview ? (
           <div className="h-full w-full bg-black" data-xr-preview-stage>
             <XrPlayer key={preview.t0} scene={scene} clock={() => (performance.now() - preview.t0) / 1000} mode="audience" interactive />
@@ -427,9 +429,23 @@ export default function XrEditor({
           />
         )}
       </div>
+  )
+
+  const footEl = (
+    <div className="space-y-2">
       {!preview && (
         <p className="text-[10px] leading-relaxed text-white/35">
-          {view === 'orbit' ? '拖曳旋轉 · 滾輪縮放 · 右鍵（或雙指）平移 · 點物件選取（Shift 多選）· 從素材庫拖入生成。黃色人形 = 觀眾，三色軸 = 舞台原點 (0,0,0)。' : '拖曳環視 · 滾輪縮放（只影響預覽）。轉到想要的方向後按「設為初始視角」。'}
+          {view === 'orbit' ? (
+            <>
+              <span className="pointer-coarse:hidden">拖曳旋轉 · 滾輪縮放 · 右鍵平移 · 點物件選取（Shift 多選）· 從素材庫拖入生成。</span>
+              <span className="hidden pointer-coarse:inline">單指旋轉 · 雙指縮放與平移 · 點物件選取 · 點素材庫的檔案加入場景。</span> 黃色人形 = 觀眾，三色軸 = 舞台原點 (0,0,0)。
+            </>
+          ) : (
+            <>
+              <span className="pointer-coarse:hidden">拖曳環視 · 滾輪縮放（只影響預覽）。</span>
+              <span className="hidden pointer-coarse:inline">單指拖曳環視。</span> 轉到想要的方向後按「設為初始視角」。
+            </>
+          )}
         </p>
       )}
       {!preview && view === 'pov' && (
@@ -447,6 +463,15 @@ export default function XrEditor({
           📌 把目前方向設為初始視角
         </button>
       )}
+    </div>
+  )
+
+  /** Inline (inside the cue editor): the three parts stacked. */
+  const viewportPane = (
+    <div className="flex min-h-0 flex-col gap-2" data-xr-viewport-pane>
+      {toolbarEl}
+      {canvasEl}
+      {footEl}
     </div>
   )
 
@@ -480,7 +505,7 @@ export default function XrEditor({
       </div>
       <ul className="space-y-0.5" data-xr-object-list>
         <li>
-          <button type="button" onClick={() => setSelection([])} className={`flex min-h-8 w-full items-center gap-1.5 rounded-lg border px-2 text-left text-xs ${selection.length === 0 ? 'border-accent bg-accent/10 text-white' : 'border-transparent bg-black/30 text-white/70 hover:bg-white/[0.06]'}`} data-xr-scene-row>
+          <button type="button" onClick={() => setSelection([])} className={`flex min-h-8 w-full items-center gap-1.5 rounded-lg border px-2 text-left text-xs pointer-coarse:min-h-11 pointer-coarse:text-sm ${selection.length === 0 ? 'border-accent bg-accent/10 text-white' : 'border-transparent bg-black/30 text-white/70 hover:bg-white/[0.06]'}`} data-xr-scene-row>
             🎬 場景設定
             <span className="ml-auto truncate text-[10px] text-white/35">模式 · 全景 · 視角 · 燈光</span>
           </button>
@@ -489,7 +514,7 @@ export default function XrEditor({
           const on = selection.includes(o.id)
           return (
             <li key={o.id} className={`flex items-center gap-0.5 rounded-lg border pr-1 ${on ? (o.id === selectedId ? 'border-accent bg-accent/10' : 'border-accent/40 bg-accent/5') : 'border-transparent bg-black/30 hover:bg-white/[0.06]'}`} style={{ marginLeft: depth * 14 }} data-xr-object={o.id} data-xr-depth={depth}>
-              <button type="button" onClick={() => patchObject(o.id, { visible: !o.visible })} className="flex h-8 w-7 shrink-0 items-center justify-center text-sm" aria-label={o.visible ? `隱藏 ${o.name}` : `顯示 ${o.name}`} aria-pressed={o.visible} title={o.visible ? '觀眾看得到（點一下隱藏）' : '已隱藏（互動可再把它打開）'}>
+              <button type="button" onClick={() => patchObject(o.id, { visible: !o.visible })} className="flex h-8 w-7 shrink-0 items-center justify-center text-sm pointer-coarse:h-11 pointer-coarse:w-10" aria-label={o.visible ? `隱藏 ${o.name}` : `顯示 ${o.name}`} aria-pressed={o.visible} title={o.visible ? '觀眾看得到（點一下隱藏）' : '已隱藏（互動可再把它打開）'}>
                 <span className={o.visible ? '' : 'opacity-25'}>👁</span>
               </button>
               {renaming === o.id ? (
@@ -505,12 +530,12 @@ export default function XrEditor({
                   onKeyDown={(e) => (e.key === 'Enter' || e.key === 'Escape') && (e.target as HTMLInputElement).blur()}
                 />
               ) : (
-                <button type="button" onClick={(e) => select(o.id, e.shiftKey || e.metaKey || e.ctrlKey)} onDoubleClick={() => setRenaming(o.id)} className={`min-h-8 min-w-0 flex-1 truncate text-left text-xs ${o.visible ? 'text-white/85' : 'text-white/35'}`} title="點一下選取（Shift / ⌘ 多選）· 點兩下重新命名">
+                <button type="button" onClick={(e) => select(o.id, e.shiftKey || e.metaKey || e.ctrlKey)} onDoubleClick={() => setRenaming(o.id)} className={`min-h-8 min-w-0 flex-1 truncate text-left text-xs pointer-coarse:min-h-11 pointer-coarse:text-sm ${o.visible ? 'text-white/85' : 'text-white/35'}`} title="點一下選取（Shift / ⌘ 多選）· 點兩下重新命名">
                   {XR_KIND_ICONS[o.kind]} {o.name}
                   {o.interactions.length > 0 && <span className="ml-1 text-[10px] text-standby">⚡{o.interactions.length}</span>}
                 </button>
               )}
-              <button type="button" onClick={() => setRenaming(o.id)} className="flex h-8 w-6 shrink-0 items-center justify-center text-[11px] text-white/35 hover:text-white" aria-label={`重新命名 ${o.name}`} title="重新命名">
+              <button type="button" onClick={() => setRenaming(o.id)} className="flex h-8 w-6 shrink-0 items-center justify-center text-[11px] text-white/35 hover:text-white pointer-coarse:h-11 pointer-coarse:w-10 pointer-coarse:text-sm" aria-label={`重新命名 ${o.name}`} title="重新命名">
                 ✎
               </button>
             </li>
@@ -528,7 +553,7 @@ export default function XrEditor({
     <Section title="雲端素材庫" hint="Cloudflare R2 · 專案 + Default 共用" id="assets">
       <div className="grid grid-cols-2 gap-1" role="tablist" aria-label="素材分類">
         {ASSET_TABS.map((t) => (
-          <button key={t.id} type="button" role="tab" aria-selected={assetTab === t.id} onClick={() => setAssetTab(t.id)} className={`min-h-8 rounded-md text-[11px] font-medium ${assetTab === t.id ? 'bg-white/15 text-white' : 'bg-black/30 text-white/50 hover:text-white/80'}`} data-xr-asset-tab={t.id}>
+          <button key={t.id} type="button" role="tab" aria-selected={assetTab === t.id} onClick={() => setAssetTab(t.id)} className={`min-h-8 rounded-md text-[11px] font-medium pointer-coarse:min-h-11 pointer-coarse:text-xs ${assetTab === t.id ? 'bg-white/15 text-white' : 'bg-black/30 text-white/50 hover:text-white/80'}`} data-xr-asset-tab={t.id}>
             {t.label}
           </button>
         ))}
@@ -839,7 +864,7 @@ export default function XrEditor({
                   </option>
                 ))}
               </select>
-              <button type="button" onClick={() => patchObject(selected.id, { interactions: selected.interactions.filter((x) => x.id !== it.id) })} className="flex h-8 w-7 shrink-0 items-center justify-center text-xs text-white/40 hover:text-panic" aria-label="移除互動">
+              <button type="button" onClick={() => patchObject(selected.id, { interactions: selected.interactions.filter((x) => x.id !== it.id) })} className="flex h-8 w-7 shrink-0 items-center justify-center text-xs text-white/40 hover:text-panic pointer-coarse:h-11 pointer-coarse:w-11" aria-label="移除互動">
                 ✕
               </button>
             </div>
@@ -928,14 +953,19 @@ export default function XrEditor({
   )
 
   // Wide: library + tree on the left, viewport in the middle, inspector on the right (like a 3D authoring tool).
+  // On a phone everything is one column and only the canvas stays pinned, so values can be edited while watching it.
   const wideLayout = (
-    <div className="grid h-full min-h-0 grid-cols-1 gap-3 overflow-y-auto lg:grid-cols-[17rem_minmax(0,1fr)_21rem] lg:overflow-hidden" data-xr-editor={workspace ? 'workspace' : 'expanded'}>
-      <div className="order-2 space-y-3 lg:order-1 lg:overflow-y-auto lg:pr-1">
+    <div className="grid h-full min-h-0 grid-cols-1 gap-x-3 gap-y-2 overflow-y-auto lg:grid-cols-[17rem_minmax(0,1fr)_21rem] lg:grid-rows-[auto_minmax(0,1fr)_auto] lg:overflow-hidden" data-xr-editor={workspace ? 'workspace' : 'expanded'}>
+      <div className="order-1 lg:col-start-2 lg:row-start-1" data-xr-viewport-pane>
+        {toolbarEl}
+      </div>
+      <div className="sticky top-0 z-10 order-2 -mx-1 h-[34dvh] min-h-48 bg-[#101114] px-1 py-1 lg:static lg:col-start-2 lg:row-start-2 lg:mx-0 lg:h-auto lg:min-h-0 lg:p-0">{canvasEl}</div>
+      <div className="order-3 lg:col-start-2 lg:row-start-3">{footEl}</div>
+      <div className="order-4 space-y-3 lg:col-start-1 lg:row-span-3 lg:row-start-1 lg:overflow-y-auto lg:pr-1">
         {hierarchy}
         {assets}
       </div>
-      <div className="order-1 flex min-h-[55dvh] flex-col lg:order-2 lg:min-h-0">{viewportPane}</div>
-      <div className="order-3 lg:overflow-y-auto lg:pr-1">{inspector}</div>
+      <div className="order-5 lg:col-start-3 lg:row-span-3 lg:row-start-1 lg:overflow-y-auto lg:pr-1">{inspector}</div>
     </div>
   )
 
@@ -953,7 +983,7 @@ export default function XrEditor({
       <>
         <p className="rounded-lg bg-white/[0.03] p-4 text-center text-xs text-white/45">XR 編輯區已放大顯示。</p>
         {createPortal(
-          <div className="fixed inset-0 z-40 flex flex-col bg-[#101114] text-white" role="dialog" aria-label="XR 實境編輯區">
+          <div className="fixed inset-0 z-40 flex flex-col bg-[#101114] text-white pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]" role="dialog" aria-label="XR 實境編輯區">
             <header className="flex items-center justify-between border-b border-line px-4 py-2.5">
               <span className="text-sm font-semibold">🥽 XR 實境編輯區</span>
               <span className="text-[11px] text-white/40">變更會留在 Cue 草稿，記得回到 Cue 面板按「儲存」</span>
