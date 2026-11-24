@@ -54,6 +54,7 @@ import { InputPanel, type ChainStatus } from './InputPanel'
 import { Arrange, HEADER_W, LANE_H, type RecordingPreview } from './Arrange'
 import { ExportDialog } from './ExportDialog'
 import { FxPanel, Inspector, PropertiesPanel, type InspectorTab } from './Inspector'
+import { TrajectoryPanel } from './TrajectoryPanel'
 import { LibraryPanel } from './LibraryPanel'
 import { RegionMenu, type RegionAction } from './RegionMenu'
 import { SectionMenu, SectionStartDialog, type SectionAction } from './SectionMenu'
@@ -1306,6 +1307,7 @@ export function StudioView({
                   />
                 )}
                 {tab === 'fx' && <FxPanel track={selectedTrackObj ?? tracks[0] ?? null} onTrack={(patch, label) => onTrackChange(selectedTrackObj ?? tracks[0], patch, label)} />}
+                {tab === 'space' && <TrajectoryPanel studio={studio} track={selectedTrackObj ?? tracks[0] ?? null} player={player} onTrack={onTrackChange} />}
                 {tab === 'library' && <LibraryPanel projectId={projectId} projectName={projectName} readOnly={lock.readOnly} studios={list ?? []} studioId={current} reveal={reveal} folder={folder} busy={busy} onInsert={(m) => insertUrl(m)} onNotify={notify} />}
                 {tab === 'tts' && <TtsPanel onPreview={previewBuffer} onInsert={(buffer, name) => insertBuffer(buffer, name, 'tts')} />}
               </Inspector>

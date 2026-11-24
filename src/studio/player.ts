@@ -87,10 +87,11 @@ export class StudioPlayer {
     this.project = project
     if (!this.playingFlag || !this.graph || !this.ctx) return
     const trackSetChanged = !prev || Object.keys(prev.tracks).join() !== Object.keys(project.tracks).join()
-    // The compressor is a node that exists or not, and automation curves are scheduled up front:
-    // both need the graph rebuilt.
+    // The compressor is a node that exists or not, and automation and 3D trajectory curves are scheduled
+    // up front: all need the graph rebuilt.
     const structureChanged = Object.values(project.tracks).some(
-      (t) => prev?.tracks[t.id]?.fx.compressor !== t.fx.compressor || JSON.stringify(prev?.tracks[t.id]?.automation) !== JSON.stringify(t.automation),
+      (t) => prev?.tracks[t.id]?.fx.compressor !== t.fx.compressor || JSON.stringify(prev?.tracks[t.id]?.automation) !== JSON.stringify(t.automation) ||
+        JSON.stringify(prev?.tracks[t.id]?.trajectoryConfig) !== JSON.stringify(t.trajectoryConfig),
     )
     if (regionsChanged || trackSetChanged || structureChanged) return void this.play(project, this.position())
     const anySolo = Object.values(project.tracks).some((t) => t.solo)

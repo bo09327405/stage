@@ -17,6 +17,7 @@ import {
   type StudioRegion,
   type StudioTrack,
 } from '../types/studio'
+import { DEFAULT_TRAJECTORY } from '../types/trajectory'
 import { db } from './firebase'
 import { currentUser } from './auth'
 import { recordedUpdate } from './history'
@@ -111,6 +112,7 @@ export function newTrack(order: number, name?: string): Omit<StudioTrack, 'id'> 
     fx: DEFAULT_FX,
     automation: {},
     input: DEFAULT_INPUT,
+    trajectoryConfig: DEFAULT_TRAJECTORY,
   }
 }
 

@@ -46,6 +46,8 @@ import { isYoutubeCue, youtubeIdOf, youtubeStartOf, youtubeWatchUrl } from '../.
 import { recordProjectMedia, recordSharedMedia } from '../../services/mediaLibrary'
 import { InboxPickerModal } from './InboxPickerModal'
 import { StudioBinding } from './StudioBinding'
+import { CueTrajectory } from './CueTrajectory'
+import { DEFAULT_TRAJECTORY } from '../../types/trajectory'
 import { WaveformTrimmer } from './WaveformTrimmer'
 import { XR_MODE_LABELS, newXrScene, xrProblem } from '../../types/xr'
 import { createXrScene, useXrScenes } from '../../services/xrScenes'
@@ -240,6 +242,8 @@ export function CueEditor({
         // Only XR cues carry a scene (keeps every other cue record small).
         xr: draft.type === 'AUDIENCE_XR' ? draft.xr : null,
         xrSceneId: xrBound ? draft.xrSceneId : '',
+        // Only audio file cues carry a 3D placement (studio cues use their tracks').
+        trajectoryConfig: draft.type === 'AUDIO' && !studioMode ? draft.trajectoryConfig : DEFAULT_TRAJECTORY,
       })
     } catch (err) {
       setError((err as Error).message)
@@ -794,6 +798,15 @@ export function CueEditor({
                 <Label hint={`${draft.volume}%`}>音量</Label>
                 <Fader label="Cue volume" value={draft.volume} onChange={(v) => set('volume', v)} fill="#30d158" />
               </div>
+            )}
+
+            {draft.type === 'AUDIO' && !studioMode && draft.targetUrl && !isYoutubeCue(draft) && (
+              <CueTrajectory title={draft.title} url={draft.targetUrl} value={draft.trajectoryConfig} onChange={(next) => set('trajectoryConfig', next)} />
+            )}
+            {studioMode && (
+              <p className="rounded-lg bg-white/[0.03] p-3 text-xs leading-relaxed text-white/45">
+                🎧 Studio Cue 使用各音軌自己的 3D 空間軌跡：到 Studio 的「空間」分頁設定，觀眾端會把這些音軌分開、用 HRTF 即時定位。
+              </p>
             )}
           </>
         )}

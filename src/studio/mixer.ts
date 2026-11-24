@@ -1,5 +1,6 @@
 import { TRACK_PARAMS, filterHz, laneValueAt, projectLength, regionGainAt, sortedTracks, type StudioProject, type StudioRegion, type StudioTrack } from '../types/studio'
 import { SAMPLE_RATE, bufferOffset, regionBuffer } from './audio'
+import { createSpatial, effectiveTrajectory, scheduleSpatialPath, trackPathOrigin, type SpatialNodes } from './spatial'
 
 /*
  * The studio's mix graph, built the same way for live preview (AudioContext) and for rendering
@@ -9,6 +10,9 @@ import { SAMPLE_RATE, bufferOffset, regionBuffer } from './audio'
  *     → track: high-pass → 3-band EQ → [compressor] → low-pass (Filter automation)
  *              → volume (fader, mute/solo) → automation gain (Volume automation) → pan → master
  *                                         ↘ reverb send ↗   ↘ delay send (with feedback) ↗
+ *
+ * A track with a 3D trajectory swaps the stereo pan for the binaural chain of studio/spatial.ts
+ * (low-pass → HRTF panner, plus a distance-driven reverb send); its echoes join the master unpanned.
  */
 
 export interface TrackNodes {
@@ -24,6 +28,8 @@ export interface TrackNodes {
   delaySend: GainNode
   delay: DelayNode
   feedback: GainNode
+  /** Present while the track has a 3D trajectory (then `pan` is not in the signal path). */
+  spatial?: SpatialNodes
 }
 
 export interface MixGraph {
@@ -113,20 +119,33 @@ export function buildMix(
       const makeup = new GainNode(ctx, { gain: 1.3 })
       chainEnd = chainEnd.connect(comp).connect(makeup)
     }
-    chainEnd.connect(lowpass).connect(volume).connect(autoGain).connect(pan).connect(master)
+    chainEnd.connect(lowpass).connect(volume).connect(autoGain)
+    const spatial = track.trajectoryConfig.enabled ? createSpatial(ctx, effectiveTrajectory(project, track)) : null
+    // Where echoes and reverb return to: the stereo pan, or (binaural) straight to the master.
+    let out: AudioNode = pan
+    if (spatial) {
+      autoGain.connect(spatial.airLowpass)
+      spatial.panner.connect(master)
+      spatial.wetBus.connect(master)
+      out = spatial.wetBus
+    } else {
+      autoGain.connect(pan).connect(master)
+    }
     // Sends are post-fader (and post-automation), so muting or riding a track also affects its echoes.
     const reverbSend = new GainNode(ctx)
     const convolver = new ConvolverNode(ctx, { buffer: ir })
-    autoGain.connect(reverbSend).connect(convolver).connect(pan)
+    autoGain.connect(reverbSend).connect(convolver).connect(out)
+    if (spatial) autoGain.connect(spatial.send).connect(convolver)
     const delaySend = new GainNode(ctx)
     const delay = new DelayNode(ctx, { maxDelayTime: 2 })
     const feedback = new GainNode(ctx)
-    autoGain.connect(delaySend).connect(delay).connect(pan)
+    autoGain.connect(delaySend).connect(delay).connect(out)
     delay.connect(feedback).connect(delay)
 
-    const nodes = { highpass, low, mid, high, lowpass, volume, autoGain, pan, reverbSend, delaySend, delay, feedback }
+    const nodes: TrackNodes = { highpass, low, mid, high, lowpass, volume, autoGain, pan, reverbSend, delaySend, delay, feedback, ...(spatial ? { spatial } : {}) }
     applyTrack(ctx, nodes, track, anySolo)
     scheduleTrackAutomation(track, nodes, from, when, end)
+    if (spatial) scheduleSpatialPath(spatial, effectiveTrajectory(project, track), trackPathOrigin(project, track.id), from, when, end)
     tracks.set(track.id, nodes)
   }
 
@@ -178,16 +197,19 @@ function scheduleRegion(ctx: BaseAudioContext, r: StudioRegion, buffer: AudioBuf
 }
 
 const usesTail = (p: StudioProject, trackIds?: string[]) =>
-  Object.values(p.tracks).some((t) => (!trackIds || trackIds.includes(t.id)) && (t.fx.reverb > 0 || t.fx.delay > 0))
+  Object.values(p.tracks).some((t) => (!trackIds || trackIds.includes(t.id)) && (t.fx.reverb > 0 || t.fx.delay > 0 || (t.trajectoryConfig.enabled && t.trajectoryConfig.acoustics.reverbSend > 0)))
 
 /**
  * Render the project (or some tracks) to a stereo buffer — export, cue playback and "render to
  * clip" all go through here.
  */
-export async function renderMix(project: StudioProject, { trackIds, sampleRate = SAMPLE_RATE }: { trackIds?: string[]; sampleRate?: number } = {}) {
+export async function renderMix(
+  project: StudioProject,
+  { trackIds, sampleRate = SAMPLE_RATE, seconds: fixed }: { trackIds?: string[]; sampleRate?: number; /** Render exactly this long (so separately rendered stems line up). */ seconds?: number } = {},
+) {
   const regions = Object.values(project.regions).filter((r) => !trackIds || trackIds.includes(r.trackId))
   const end = regions.reduce((e, r) => Math.max(e, r.start + r.duration), 0) || projectLength(project)
-  const seconds = Math.max(0.1, end + (usesTail(project, trackIds) ? TAIL : 0))
+  const seconds = fixed ?? Math.max(0.1, end + (usesTail(project, trackIds) ? TAIL : 0))
   const ctx = new OfflineAudioContext(2, Math.ceil(seconds * sampleRate), sampleRate)
   const buffers = await loadRegionBuffers(project, regions.map((r) => r.id))
   buildMix(ctx, project, buffers, { from: 0, when: 0, trackIds })

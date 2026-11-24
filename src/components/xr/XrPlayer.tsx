@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
+import { stageAudio } from '../../services/audioEngine'
 import { XrStage, type XrStatus } from '../../services/xrStage'
 import type { XrScene, XrTrigger } from '../../types/xr'
 
@@ -354,6 +355,9 @@ export default function XrPlayer({
     }
     api.current = { enterXr, startGyro, stopGyro, scan: () => setPlacePhase('SCANNING_GROUND') }
 
+    const look = new THREE.Vector3()
+    const lastLook = new THREE.Vector3()
+    let headSent = false
     renderer.setAnimationLoop((_time: number, frame?: XRFrame) => {
       const now = latest.current
       if (now.scene !== applied) {
@@ -377,6 +381,23 @@ export default function XrPlayer({
       }
       const viewer = renderer.xr.isPresenting ? renderer.xr.getCamera() : stage.camera
       stage.update(now.clock(), now.paused, viewer)
+      // Head tracking for 3D sounds: with the gyroscope or a headset running, the sound field turns with the view
+      // (the audio engine applies it only to cues that ask for it).
+      if (audience) {
+        const tracking = !!device.reading || renderer.xr.isPresenting
+        if (tracking) {
+          viewer.getWorldDirection(look)
+          if (look.distanceToSquared(lastLook) > 4e-6) {
+            lastLook.copy(look)
+            stageAudio.setListenerDirection({ x: look.x, y: look.y, z: look.z })
+          }
+          headSent = true
+        } else if (headSent) {
+          headSent = false
+          lastLook.set(0, 0, 0)
+          stageAudio.setListenerDirection(null)
+        }
+      }
 
       // — AR placement —
       if (!placingNow) {
@@ -459,6 +480,7 @@ export default function XrPlayer({
     return () => {
       api.current = null
       renderer.setAnimationLoop(null)
+      if (headSent) stageAudio.setListenerDirection(null)
       session?.end().catch(() => {})
       stopGyro()
       observer.disconnect()
@@ -479,7 +501,7 @@ export default function XrPlayer({
       renderer.forceContextLoss()
       canvas.remove()
     }
-  }, [])
+  }, [audience])
 
   // Gyroscope: only real phones, only when the scene allows it. iOS needs a tap first (see the button below).
   // (A passthrough scene always uses it: the floor reticle follows the phone's tilt.)

@@ -12,7 +12,8 @@ import {
   type HitTrigger,
   type Cue,
 } from '../types/cue'
-import { prepareStudioMix, studioMixUrl } from '../studio/cueMix'
+import { prepareStudioMix, studioMix } from '../studio/cueMix'
+import { SpatialStage, loadSpatialBuffer, type SpatialPart } from './spatialStage'
 import type { FadeShape } from '../types/studio'
 import { fadeCurve } from '../utils/fadeCurve'
 import { isYoutubeCue } from '../utils/youtube'
@@ -103,6 +104,10 @@ export class StageAudioEngine {
   private masterLevel = 1
   private paused = false
   private lastHitStopSeq: number | null = null
+  /** Cues with a 3D trajectory play here (decoded buffers + HRTF), not through the element pool. */
+  private spatial: SpatialStage | null = null
+  /** Studio cues waiting for their mix to say whether they are spatial or a plain WAV. */
+  private pendingStudio = new Set<string>()
   private serverNow: () => number = Date.now
 
   /** The shared <video> element; the stage display mounts it when a VIDEO cue owns the screen. */
@@ -206,6 +211,13 @@ export class StageAudioEngine {
     this.master = ctx.createGain()
     this.master.gain.value = this.masterLevel
     this.master.connect(this.buildFx(ctx))
+    this.spatial = new SpatialStage({
+      ctx: () => ctx,
+      master: () => this.master!,
+      serverNow: () => this.serverNow(),
+      liveLevel: (inst) => this.levelFor(inst.instanceId, inst.cue),
+      load: (inst) => this.loadSpatialParts(inst),
+    })
 
     const silent = silentWavUrl()
     const makeSlot = (el: HTMLMediaElement, duckable: boolean): Slot => {
@@ -242,7 +254,12 @@ export class StageAudioEngine {
 
   /** Retry after the browser blocked playback (call from a gesture). */
   resume() {
-    this.ctx?.resume().catch(() => {})
+    const wasRunning = this.ctx?.state === 'running'
+    this.ctx?.resume().then(
+      // A suspended clock leaves spatial voices behind the show: start them again from the server position.
+      () => !wasRunning && this.spatial?.resync(),
+      () => {},
+    )
     for (const voice of this.voices.values()) {
       if (!voice.held && voice.started && voice.slot.el.paused && !voice.stopping) this.play(voice.slot.el)
     }
@@ -316,24 +333,27 @@ export class StageAudioEngine {
     this.applyLive()
   }
 
+  /** The console's live level for a voice owner (an instance id, or "hit:<id>"): crossfade, hit or executor fader. */
+  private levelFor(owner: string | null, cue: Cue | undefined = owner ? this.voices.get(owner)?.inst.cue : undefined): number {
+    const { xfade, hitLevels, execLevels } = this.liveState
+    if (!owner) return 1
+    if (owner.startsWith('hit:')) return hitLevels[owner.slice(4)] ?? 1
+    const exec = cue?.executor
+    if (exec) return execLevels[exec] ?? 1
+    if (!xfade) return 1
+    if (owner === xfade.to) return xfade.pos
+    return xfade.from.includes(owner) ? 1 - xfade.pos : 1
+  }
+
   private applyLive() {
     if (!this.ctx) return
     const t = this.ctx.currentTime
-    const { xfade, hitLevels, execLevels } = this.liveState
-    const level = (owner: string | null) => {
-      if (!owner) return 1
-      if (owner.startsWith('hit:')) return hitLevels[owner.slice(4)] ?? 1
-      const exec = this.voices.get(owner)?.inst.cue.executor
-      if (exec) return execLevels[exec] ?? 1
-      if (!xfade) return 1
-      if (owner === xfade.to) return xfade.pos
-      return xfade.from.includes(owner) ? 1 - xfade.pos : 1
-    }
     for (const slot of [...this.cuePool, ...this.hitPool, ...(this.videoSlot ? [this.videoSlot] : [])]) {
-      slot.live.gain.setTargetAtTime(Math.max(0, Math.min(1, level(slot.owner))), t, 0.02)
+      slot.live.gain.setTargetAtTime(Math.max(0, Math.min(1, this.levelFor(slot.owner))), t, 0.02)
       const cue = slot.owner ? this.voices.get(slot.owner)?.inst.cue : null
       slot.pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, cue?.pan ?? 0)), t, 0.02)
     }
+    this.spatial?.applyLive()
   }
 
   /**
@@ -366,6 +386,7 @@ export class StageAudioEngine {
     this.active = active
     if (!this.ctx) return
     this.paused = pausedAt != null
+    const spatialInsts: ActiveCue[]= []
     const playing = Object.values(active).find((d) => isMediaCue(d.cue) && !isYoutubeCue(d.cue) && d.stopAt == null && cueTargets(d.cue, this.audienceId, this.audienceChannel))
     setNowPlaying(playing?.cue.title ?? null)
 
@@ -377,6 +398,12 @@ export class StageAudioEngine {
 
     for (const inst of Object.values(active)) {
       if (!isMediaCue(inst.cue) || isYoutubeCue(inst.cue) || !(inst.cue.targetUrl || inst.cue.studioId) || !cueTargets(inst.cue, this.audienceId, this.audienceChannel)) continue
+      // 3D sounds: a file with a trajectory, or a studio whose mix turned out to be spatial.
+      if (this.spatial?.owns(inst.instanceId) || (!this.voices.has(inst.instanceId) && this.isSpatialFile(inst.cue))) {
+        spatialInsts.push(inst)
+        continue
+      }
+      if (this.pendingStudio.has(inst.instanceId)) continue
       const hold = this.paused || inst.pausedAt != null
       const voice = this.voices.get(inst.instanceId)
       if (!voice) {
@@ -406,6 +433,30 @@ export class StageAudioEngine {
     for (const id of [...this.voices.keys()]) {
       if (!active[id]) this.stopVoice(id, CUT_FADE)
     }
+    // Spatial voices follow the same rules; whatever no longer reaches this device (STOP, another cue, a group
+    // change) is not in the list and so fades out and frees its nodes.
+    this.spatial?.sync(spatialInsts, this.paused)
+  }
+
+  /** A file cue that plays through the spatial stage (studio cues are decided when their mix is ready). */
+  private isSpatialFile(cue: Cue) {
+    return cue.type === 'AUDIO' && !cue.studioId && !!cue.targetUrl && cue.trajectoryConfig.enabled
+  }
+
+  /** The decoded sound of a spatial cue: a file as one part, or a studio's bed and stems. */
+  private async loadSpatialParts(inst: ActiveCue): Promise<SpatialPart[]> {
+    const { cue } = inst
+    if (cue.studioId && this.projectId) {
+      const mix = await studioMix(this.projectId, cue.studioId)
+      if (mix.kind !== 'spatial') throw new Error('not a spatial studio')
+      return mix.parts
+    }
+    return [{ buffer: await loadSpatialBuffer(cue.targetUrl), traj: cue.trajectoryConfig, origin: 0 }]
+  }
+
+  /** The direction the audience is looking (XR view / gyroscope), or null; turns the sound field for cues that ask. */
+  setListenerDirection(dir: { x: number; y: number; z: number } | null) {
+    this.spatial?.setListenerDirection(dir)
   }
 
   /** Stop hits on this device: one hit id, or "*" for all ("Panic All Hits" / Panic Show). */
@@ -483,10 +534,28 @@ export class StageAudioEngine {
     return slot
   }
 
-  private startVoice(inst: ActiveCue) {
+  private startVoice(inst: ActiveCue, studioUrl?: string) {
     const ctx = this.ctx!
     const { cue } = inst
     if (this.serverNow() >= activeEndAt(inst)) return
+
+    // A studio cue: its mix says whether it is a plain WAV (the element voice below) or spatial (stems + live panners).
+    if (cue.studioId && this.projectId && !studioUrl) {
+      const id = inst.instanceId
+      this.pendingStudio.add(id)
+      studioMix(this.projectId, cue.studioId).then(
+        (mix) => {
+          this.pendingStudio.delete(id)
+          const now = this.active[id]
+          // Gone, stopped, retargeted or held meanwhile: the next sync decides again (the mix is cached by then).
+          if (!now || now.stopAt != null || now.pausedAt != null || this.paused || !cueTargets(now.cue, this.audienceId, this.audienceChannel)) return
+          if (mix.kind === 'spatial') this.spatial?.start(now, mix.parts)
+          else this.startVoice(now, mix.url)
+        },
+        () => this.pendingStudio.delete(id),
+      )
+      return
+    }
 
     let slot: Slot
     if (cue.type === 'VIDEO') {
@@ -506,17 +575,11 @@ export class StageAudioEngine {
     const trimmed = cue.mediaStartTime > 0 || cue.mediaEndTime > 0
     // Untrimmed loops can use the element's own gapless loop; trimmed ones are wrapped in tick().
     el.loop = cue.loop && !trimmed
-    if (cue.studioId && this.projectId) {
-      // A DAW Studio cue: play its live mix (rendered on this device; usually ready from standby).
-      studioMixUrl(this.projectId, cue.studioId).then(
-        (url) => {
-          if (slot.owner !== inst.instanceId || !this.voices.has(inst.instanceId)) return
-          el.src = url
-          el.load()
-          this.schedule(voice) // starts at the right point even if rendering took a moment
-        },
-        () => this.releaseVoice(inst.instanceId),
-      )
+    if (cue.studioId && studioUrl) {
+      // A DAW Studio cue: play its mix (rendered on this device; usually ready from standby).
+      el.src = studioUrl
+      el.load()
+      this.schedule(voice)
       return
     }
     el.src = cue.targetUrl
@@ -533,6 +596,8 @@ export class StageAudioEngine {
   /** Get a cue ready before it is GOed: studio cues render their mix in the background. */
   prepare(cue: Cue | null | undefined) {
     if (cue?.studioId && this.projectId && isMediaCue(cue)) prepareStudioMix(this.projectId, cue.studioId)
+    // STANDBY: fetch and decode a 3D file's sound now, so GO starts it on the spot.
+    else if (cue && this.isSpatialFile(cue)) loadSpatialBuffer(cue.targetUrl).catch(() => {})
   }
 
   /**
@@ -609,7 +674,7 @@ export class StageAudioEngine {
    */
   private tick() {
     const ctx = this.ctx
-    if (!ctx || this.voices.size === 0) return
+    if (!ctx || (this.voices.size === 0 && !this.spatial?.size)) return
     const now = this.serverNow()
 
     const duckers = Object.values(this.active).filter(
@@ -620,6 +685,18 @@ export class StageAudioEngine {
         now >= activeStartAt(d) &&
         now < activeEndAt(d),
     )
+
+    // How far every other running cue's duckOthers lowers a voice, and how slowly it moves (element and spatial voices alike).
+    const duckFor = (inst: ActiveCue, current: number) => {
+      const relevant = duckers.filter((d) => d.instanceId !== inst.instanceId)
+      const target = relevant.reduce((level, d) => level * (1 - d.cue.duckOthers / 100), 1)
+      // Duck in over the ducking cue's fade-in, release over its fade-out (time constant ≈ fade/3).
+      const fade =
+        target < current
+          ? Math.max(0, ...relevant.map((d) => d.cue.fadeInTime))
+          : Math.max(0.3, ...Object.values(this.active).map((d) => (d.cue.duckOthers > 0 ? d.cue.fadeOutTime : 0)))
+      return { target, fade }
+    }
 
     for (const voice of this.voices.values()) {
       if (voice.held) continue
@@ -632,18 +709,13 @@ export class StageAudioEngine {
         if (Number.isFinite(end) && el.currentTime >= end - 0.03) el.currentTime = cue.mediaStartTime
       }
 
-      const relevant = duckers.filter((d) => d.instanceId !== voice.inst.instanceId)
-      const target = relevant.reduce((level, d) => level * (1 - d.cue.duckOthers / 100), 1)
+      const { target, fade } = duckFor(voice.inst, slot.duckTarget)
       if (target !== slot.duckTarget) {
-        const ducking = target < slot.duckTarget
-        // Duck in over the ducking cue's fade-in, release over its fade-out (time constant ≈ fade/3).
-        const fade = ducking
-          ? Math.max(0, ...relevant.map((d) => d.cue.fadeInTime))
-          : Math.max(0.3, ...Object.values(this.active).map((d) => (d.cue.duckOthers > 0 ? d.cue.fadeOutTime : 0)))
         slot.duck.gain.setTargetAtTime(target, ctx.currentTime, Math.max(0.03, fade / 3))
         slot.duckTarget = target
       }
     }
+    this.spatial?.tick(duckFor)
   }
 
   private rampTo(gain: GainNode, value: number, seconds: number, shape?: FadeShape) {

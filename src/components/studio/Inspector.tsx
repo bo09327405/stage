@@ -2,11 +2,12 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { dbLabel, timecode } from '../../studio/format'
 import { DEFAULT_EQ, DEFAULT_FX, TRACK_COLORS, type StudioEq, type StudioFx, type StudioProject, type StudioRegion, type StudioTrack } from '../../types/studio'
 
-export type InspectorTab = 'props' | 'fx' | 'library' | 'tts'
+export type InspectorTab = 'props' | 'fx' | 'space' | 'library' | 'tts'
 
 const TABS: { id: InspectorTab; label: string }[] = [
   { id: 'props', label: '屬性' },
   { id: 'fx', label: 'EQ · FX' },
+  { id: 'space', label: '空間' },
   { id: 'library', label: '素材' },
   { id: 'tts', label: 'TTS' },
 ]
@@ -15,7 +16,7 @@ const TABS: { id: InspectorTab; label: string }[] = [
 export function Inspector({ tab, onTab, children }: { tab: InspectorTab; onTab: (t: InspectorTab) => void; children: ReactNode }) {
   return (
     <aside className="flex h-full min-h-0 flex-col border-l border-line bg-[#151515]" aria-label="工具與屬性" data-inspector>
-      <div className="grid shrink-0 grid-cols-4 gap-1 border-b border-line p-1.5" role="tablist">
+      <div className="grid shrink-0 grid-cols-5 gap-1 border-b border-line p-1.5" role="tablist">
         {TABS.map((t) => (
           <button
             key={t.id}

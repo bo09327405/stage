@@ -6,6 +6,7 @@ import type { ExecutorRun } from './sequence'
 import type { CueTrigger } from './trigger'
 import { normalizeMix, type VjMix } from './vj'
 import { normalizeXr, type XrScene } from './xr'
+import { DEFAULT_TRAJECTORY, normalizeTrajectory, type TrajectoryConfig } from './trajectory'
 
 export type CueType = 'AUDIO' | 'VIDEO' | 'IMAGE' | 'TEXT' | 'INTERACTIVE_UPLOAD' | 'BLACKOUT' | 'VIBRATION' | 'VJ' | 'AUDIENCE_LIVE' | 'AUDIENCE_XR'
 
@@ -202,6 +203,11 @@ export interface Cue {
    * Its multitrack mix is rendered live on each device, so studio edits need no export.
    */
   studioId: string
+  /**
+   * AUDIO / VIDEO cues with a file: 3D binaural placement and movement of the cue's own sound (types/trajectory.ts).
+   * Studio cues use the trajectories of their tracks instead.
+   */
+  trajectoryConfig: TrajectoryConfig
 }
 
 export const DEFAULT_CUE: Omit<Cue, 'id'> = {
@@ -249,6 +255,7 @@ export const DEFAULT_CUE: Omit<Cue, 'id'> = {
   targetChannels: ['all'],
   triggers: [],
   studioId: '',
+  trajectoryConfig: DEFAULT_TRAJECTORY,
 }
 
 /** Stage 2/3 field names, migrated on read. */
@@ -274,6 +281,7 @@ export function normalizeCue(raw: Omit<Partial<Cue>, 'stopOthers'> & LegacyCueFi
     visual: normalizeVisual(rest.visual),
     vj: normalizeMix(rest.vj),
     xr: normalizeXr(rest.xr),
+    trajectoryConfig: normalizeTrajectory(rest.trajectoryConfig),
     // RTDB drops empty arrays: a cue with no stored list is for every group.
     targetChannels: (Object.values(rest.targetChannels ?? {}) as string[]).length ? (Object.values(rest.targetChannels ?? {}) as string[]) : ['all'],
     triggers: Object.values(rest.triggers ?? {}),

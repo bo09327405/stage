@@ -5,6 +5,7 @@
  */
 
 import { curveValueAt } from '../studio/curves'
+import { normalizeTrajectory, type TrajectoryConfig } from './trajectory'
 
 /**
  * An automation node. Region volume: `t` seconds from the region's start, `v` gain (0–1.5), linear
@@ -225,6 +226,8 @@ export interface StudioTrack {
   fx: StudioFx
   automation: Partial<Record<TrackParam, AutomationLane>>
   input: TrackInput
+  /** 3D binaural placement and movement of this track (types/trajectory.ts); `enabled: false` = plain stereo. */
+  trajectoryConfig: TrajectoryConfig
 }
 
 export interface StudioProject {
@@ -299,6 +302,7 @@ export function normalizeTrack(id: string, raw: Partial<StudioTrack> = {}): Stud
       }),
     ),
     input: normalizeInput(raw.input),
+    trajectoryConfig: normalizeTrajectory(raw.trajectoryConfig),
   }
 }
 
