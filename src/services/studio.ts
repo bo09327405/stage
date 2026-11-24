@@ -17,6 +17,7 @@ import {
   type StudioRegion,
   type StudioTrack,
 } from '../types/studio'
+import { DEFAULT_AMBISONICS, DEFAULT_IAMF } from '../types/spatialAudio'
 import { DEFAULT_TRAJECTORY } from '../types/trajectory'
 import { db } from './firebase'
 import { currentUser } from './auth'
@@ -113,6 +114,9 @@ export function newTrack(order: number, name?: string): Omit<StudioTrack, 'id'> 
     automation: {},
     input: DEFAULT_INPUT,
     trajectoryConfig: DEFAULT_TRAJECTORY,
+    format: 'standard',
+    ambisonicsConfig: DEFAULT_AMBISONICS,
+    iamfConfig: DEFAULT_IAMF,
   }
 }
 

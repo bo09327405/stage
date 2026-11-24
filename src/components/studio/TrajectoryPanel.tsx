@@ -1,20 +1,10 @@
 import { useMemo } from 'react'
-import { bufferOffset, regionBuffer } from '../../studio/audio'
+import { firstRegionOf, regionSound } from '../../studio/audition'
 import type { StudioPlayer } from '../../studio/player'
 import { effectiveTrajectory, trackPathOrigin } from '../../studio/spatial'
-import { sortedTracks, type StudioProject, type StudioRegion, type StudioTrack } from '../../types/studio'
+import { sortedTracks, type StudioProject, type StudioTrack } from '../../types/studio'
 import { normalizeTrajectory, type TrajectoryConfig } from '../../types/trajectory'
 import { TrajectoryEditor } from './TrajectoryEditor'
-
-/** The part of a region the audition loops: its trimmed stretch of the processed source. */
-async function regionSound(ctx: AudioContext, region: StudioRegion): Promise<AudioBuffer> {
-  const buf = await regionBuffer(region)
-  const from = Math.min(buf.length - 1, Math.round(bufferOffset(region, buf) * buf.sampleRate))
-  const len = Math.max(1, Math.min(buf.length - from, Math.round(region.duration * buf.sampleRate)))
-  const out = ctx.createBuffer(buf.numberOfChannels, len, buf.sampleRate)
-  for (let c = 0; c < buf.numberOfChannels; c++) out.copyToChannel(buf.getChannelData(c).subarray(from, from + len), c)
-  return out
-}
 
 /**
  * Inspector tab "空間": a studio track's 3D sound trajectory (the editor itself is shared with the cue editor). This
@@ -39,10 +29,7 @@ export function TrajectoryPanel({
 
   if (!track) return <p className="px-4 py-3 text-xs text-white/35">選取一個音軌以設定 3D 空間軌跡</p>
 
-  const firstRegion = () =>
-    Object.values(studio.regions)
-      .filter((r) => r.trackId === track.id && !r.muted)
-      .sort((a, b) => a.start - b.start)[0]
+  const firstRegion = () => firstRegionOf(studio, track)
   const followedTrack = track.trajectoryConfig.pathSourceTrackId ? studio.tracks[track.trajectoryConfig.pathSourceTrackId] : undefined
 
   const setFollow = (tr: StudioTrack, follow: boolean) => {
@@ -60,7 +47,7 @@ export function TrajectoryPanel({
       color={track.color}
       resetKey={track.id}
       value={track.trajectoryConfig}
-      onSave={(next, label) => onTrack(track, { trajectoryConfig: next }, `「${track.name}」${label}`)}
+      onSave={(next, label) => onTrack(track, { trajectoryConfig: next, format: next.enabled ? 'trajectory_binaural' : track.format === 'trajectory_binaural' ? 'standard' : track.format }, `「${track.name}」${label}`)}
       resolve={resolve}
       followedName={followedTrack?.name}
       extraDots={extraDots}

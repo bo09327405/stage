@@ -1,16 +1,22 @@
 import { dimGain } from '../utils/dim'
-import { projectLength, type StudioProject } from '../types/studio'
+import { projectLength, type StudioProject, type StudioTrack } from '../types/studio'
 import { SAMPLE_RATE } from './audio'
-import { applyTrack, buildMix, loadRegionBuffers, type MixGraph } from './mixer'
+import type { AmbiRenderer } from './ambisonics'
+import { applyTrack, buildMix, loadRegionBuffers, prepareAmbisonics, type MixGraph } from './mixer'
 
 /**
  * Live multitrack preview in the studio. Playing builds the mix graph from the current position;
  * edits to regions while playing rebuild it seamlessly from where the playhead is, and track
  * settings (volume, pan, EQ, sends, mute / solo) are applied to the running graph without a gap.
  */
+/** What of an Ambisonics track needs the graph rebuilt when it changes (the rotation does not: it is applied live). */
+const ambiStructure = (t: StudioTrack | undefined) => (t ? JSON.stringify([t.format, t.ambisonicsConfig.order, t.ambisonicsConfig.channelLayout, t.ambisonicsConfig.busInputs]) : '')
+
 export class StudioPlayer {
   private ctx: AudioContext | null = null
   private graph: MixGraph | null = null
+  /** Soundfield renderers of the running graph's Ambisonics tracks (disposed with it). */
+  private ambi = new Map<string, AmbiRenderer>()
   private project: StudioProject | null = null
   /** Timeline position at `anchorTime` (context clock) while playing; the paused position otherwise. */
   private anchorPos = 0
@@ -42,15 +48,20 @@ export class StudioPlayer {
     await ctx.resume()
     this.onLoading?.(true)
     let buffers: Map<string, AudioBuffer>
+    let ambi: Map<string, AmbiRenderer>
     try {
-      buffers = await loadRegionBuffers(project)
+      ;[buffers, ambi] = await Promise.all([loadRegionBuffers(project), prepareAmbisonics(ctx, project)])
     } finally {
       if (token === this.token) this.onLoading?.(false)
     }
-    if (token !== this.token) return // stopped / restarted while loading
+    if (token !== this.token) {
+      ambi.forEach((a) => a.dispose())
+      return // stopped / restarted while loading
+    }
     this.teardown()
+    this.ambi = ambi
     const when = ctx.currentTime + 0.05
-    this.graph = buildMix(ctx, project, buffers, { from, when })
+    this.graph = buildMix(ctx, project, buffers, { from, when, ambi })
     // Master → monitor (this listener's MUTE / DIM) → speakers; the meters read the master.
     this.graph.master.disconnect()
     this.graph.master.connect(this.monitorNode(ctx))
@@ -91,7 +102,8 @@ export class StudioPlayer {
     // up front: all need the graph rebuilt.
     const structureChanged = Object.values(project.tracks).some(
       (t) => prev?.tracks[t.id]?.fx.compressor !== t.fx.compressor || JSON.stringify(prev?.tracks[t.id]?.automation) !== JSON.stringify(t.automation) ||
-        JSON.stringify(prev?.tracks[t.id]?.trajectoryConfig) !== JSON.stringify(t.trajectoryConfig),
+        JSON.stringify(prev?.tracks[t.id]?.trajectoryConfig) !== JSON.stringify(t.trajectoryConfig) ||
+        ambiStructure(prev?.tracks[t.id]) !== ambiStructure(t),
     )
     if (regionsChanged || trackSetChanged || structureChanged) return void this.play(project, this.position())
     const anySolo = Object.values(project.tracks).some((t) => t.solo)
@@ -194,6 +206,13 @@ export class StudioPlayer {
     // Disconnecting the master silences reverb / delay tails at once.
     this.graph.master.disconnect()
     this.graph = null
+    this.ambi.forEach((a) => a.dispose())
+    this.ambi = new Map()
+  }
+
+  /** The soundfield renderer of an Ambisonics track in the running mix (null when it is not playing). */
+  ambiRenderer(trackId: string): AmbiRenderer | null {
+    return this.graph?.tracks.get(trackId)?.ambi ?? null
   }
 
   dispose() {

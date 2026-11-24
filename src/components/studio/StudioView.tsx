@@ -30,6 +30,9 @@ import {
   useStudioPresence,
 } from '../../services/studio'
 import { loadSource } from '../../studio/audio'
+import { probeSpatialUrl } from '../../studio/spatialProbe'
+import { DEFAULT_AMBISONICS, DEFAULT_IAMF, ambisonicOrderOf, type IamfSourceInfo } from '../../types/spatialAudio'
+import { DEFAULT_TRAJECTORY } from '../../types/trajectory'
 import { uploadStudioAudio } from '../../studio/cloud'
 import { uploadStudioFile } from '../../services/storage'
 import { recordProjectMedia } from '../../services/mediaLibrary'
@@ -54,7 +57,7 @@ import { InputPanel, type ChainStatus } from './InputPanel'
 import { Arrange, HEADER_W, LANE_H, type RecordingPreview } from './Arrange'
 import { ExportDialog } from './ExportDialog'
 import { FxPanel, Inspector, PropertiesPanel, type InspectorTab } from './Inspector'
-import { TrajectoryPanel } from './TrajectoryPanel'
+import { SpatialPanel } from './SpatialPanel'
 import { LibraryPanel } from './LibraryPanel'
 import { RegionMenu, type RegionAction } from './RegionMenu'
 import { SectionMenu, SectionStartDialog, type SectionAction } from './SectionMenu'
@@ -455,7 +458,21 @@ export function StudioView({
       // A given track may have been created a moment ago (not in this render's studio yet).
       let trackId = onTrack ?? trackForInsert
       if (!trackId) trackId = await addTrack(projectId, studio)
-      const duration = (buffer ?? (await loadSource(url))).duration
+      // Length (and channel count) of the file; an Eclipsa (IAMF) file cannot be decoded by the browser, so its
+      // header says instead.
+      let duration: number
+      let channels: number | null = null
+      let iamf: IamfSourceInfo | null = null
+      try {
+        const decoded = buffer ?? (await loadSource(url))
+        duration = decoded.duration
+        channels = decoded.numberOfChannels
+      } catch (err) {
+        const probe = await probeSpatialUrl(url).catch(() => null)
+        if (!probe?.iamf) throw err
+        iamf = probe.iamf
+        duration = probe.durationSec ?? probe.iamf.durationSec ?? 10
+      }
       const ids = await addRegions(
         projectId,
         studio.id,
@@ -486,6 +503,7 @@ export function StudioView({
       setSelection(ids)
       setSelectedTrack(trackId)
       notify(`已加入「${name}」（${timecode(duration)}）`)
+      void detectSpatialFormat(trackId, url, channels, iamf)
       return duration
     } catch (err) {
       notify(`無法加入：${(err as Error).message}`, true)
@@ -493,6 +511,29 @@ export function StudioView({
     } finally {
       setBusy(null)
     }
+  }
+
+  /**
+   * A file with 4 / 9 / 16 channels is an Ambisonics soundfield and an IAMF file an Eclipsa mix: a plain track that
+   * gets one is switched to that format (its header says AmbiX or Furse-Malham). A track that already has a spatial
+   * format is left alone.
+   */
+  const detectSpatialFormat = async (trackId: string, url: string, channels: number | null, iamf: IamfSourceInfo | null) => {
+    if (!studio) return
+    const existing = studio.tracks[trackId]
+    if (existing && existing.format !== 'standard') return
+    const track = { id: trackId, name: existing?.name ?? '音軌' } as StudioTrack
+    if (iamf) {
+      await updateTrack(projectId, studio.id, track, { format: 'eclipsa_iamf', trajectoryConfig: { ...(existing?.trajectoryConfig ?? DEFAULT_TRAJECTORY), enabled: false }, iamfConfig: { ...DEFAULT_IAMF, source: iamf } }, '設為 Eclipsa (IAMF) 音軌')
+      notify(`偵測到 Eclipsa Audio：${iamf.mixes.length} 個混音版本、${iamf.elements.length} 個音訊元素（在「空間」分頁選擇混音版本）`)
+      return
+    }
+    const order = channels ? ambisonicOrderOf(channels) : null
+    if (!order) return
+    const probe = await probeSpatialUrl(url).catch(() => null)
+    const layout = probe?.ambisonics?.channelLayout ?? 'ACN_SN3D'
+    await updateTrack(projectId, studio.id, track, { format: 'ambisonics', trajectoryConfig: { ...(existing?.trajectoryConfig ?? DEFAULT_TRAJECTORY), enabled: false }, ambisonicsConfig: { ...DEFAULT_AMBISONICS, order, channelLayout: layout } }, '設為 Ambisonics 音軌')
+    notify(`偵測到 ${channels} 聲道 Ambisonics（${order} 階，${layout === 'FUMA' ? 'FuMa' : 'AmbiX'}）：已設為 Ambisonics 音軌，可在「空間」分頁校正方向`)
   }
 
   /**
@@ -1307,7 +1348,7 @@ export function StudioView({
                   />
                 )}
                 {tab === 'fx' && <FxPanel track={selectedTrackObj ?? tracks[0] ?? null} onTrack={(patch, label) => onTrackChange(selectedTrackObj ?? tracks[0], patch, label)} />}
-                {tab === 'space' && <TrajectoryPanel studio={studio} track={selectedTrackObj ?? tracks[0] ?? null} player={player} onTrack={onTrackChange} />}
+                {tab === 'space' && <SpatialPanel studio={studio} track={selectedTrackObj ?? tracks[0] ?? null} player={player} onTrack={onTrackChange} />}
                 {tab === 'library' && <LibraryPanel projectId={projectId} projectName={projectName} readOnly={lock.readOnly} studios={list ?? []} studioId={current} reveal={reveal} folder={folder} busy={busy} onInsert={(m) => insertUrl(m)} onNotify={notify} />}
                 {tab === 'tts' && <TtsPanel onPreview={previewBuffer} onInsert={(buffer, name) => insertBuffer(buffer, name, 'tts')} />}
               </Inspector>
@@ -1605,7 +1646,7 @@ export function StudioView({
       <input
         ref={laneUpload}
         type="file"
-        accept="audio/*,video/*,.mp3,.wav,.webm,.m4a,.ogg,.flac,.aif,.aiff"
+        accept="audio/*,video/*,.mp3,.wav,.webm,.m4a,.ogg,.flac,.aif,.aiff,.iamf"
         multiple
         className="hidden"
         onChange={(e) => {

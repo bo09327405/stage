@@ -96,6 +96,8 @@ const TYPES: Record<string, string> = {
   aif: 'audio/aiff',
   aiff: 'audio/aiff',
   webm: 'audio/webm',
+  // Eclipsa Audio (IAMF) stream: decoded in the browser by a WebAssembly decoder.
+  iamf: 'audio/iamf',
   mp4: 'video/mp4',
   mov: 'video/quicktime',
   json: 'application/json',

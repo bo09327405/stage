@@ -6,6 +6,7 @@ import type { ExecutorRun } from './sequence'
 import type { CueTrigger } from './trigger'
 import { normalizeMix, type VjMix } from './vj'
 import { normalizeXr, type XrScene } from './xr'
+import { DEFAULT_AMBISONICS, DEFAULT_IAMF, normalizeAmbisonics, normalizeIamf, resolveSpatialFormat, trajectoryOnFor, type AmbisonicsConfig, type IamfConfig, type SpatialFormat } from './spatialAudio'
 import { DEFAULT_TRAJECTORY, normalizeTrajectory, type TrajectoryConfig } from './trajectory'
 
 export type CueType = 'AUDIO' | 'VIDEO' | 'IMAGE' | 'TEXT' | 'INTERACTIVE_UPLOAD' | 'BLACKOUT' | 'VIBRATION' | 'VJ' | 'AUDIENCE_LIVE' | 'AUDIENCE_XR'
@@ -208,6 +209,10 @@ export interface Cue {
    * Studio cues use the trajectories of their tracks instead.
    */
   trajectoryConfig: TrajectoryConfig
+  /** Spatial treatment of the cue's file: standard, trajectory, Ambisonics or Eclipsa (IAMF). `trajectoryConfig.enabled` follows it. */
+  format: SpatialFormat
+  ambisonicsConfig: AmbisonicsConfig
+  iamfConfig: IamfConfig
 }
 
 export const DEFAULT_CUE: Omit<Cue, 'id'> = {
@@ -256,6 +261,9 @@ export const DEFAULT_CUE: Omit<Cue, 'id'> = {
   triggers: [],
   studioId: '',
   trajectoryConfig: DEFAULT_TRAJECTORY,
+  format: 'standard',
+  ambisonicsConfig: DEFAULT_AMBISONICS,
+  iamfConfig: DEFAULT_IAMF,
 }
 
 /** Stage 2/3 field names, migrated on read. */
@@ -264,6 +272,18 @@ interface LegacyCueFields {
   endTime?: number
   autoFollow?: boolean
   stopOthers?: boolean | StopOthersMode
+}
+
+/** The cue's spatial fields, with the trajectory switch following the format. */
+function cueSpatialOf(raw: Partial<Cue>) {
+  const traj = normalizeTrajectory(raw.trajectoryConfig)
+  const format = resolveSpatialFormat(raw.format, traj.enabled)
+  return {
+    format,
+    trajectoryConfig: traj.enabled === trajectoryOnFor(format) ? traj : { ...traj, enabled: trajectoryOnFor(format) },
+    ambisonicsConfig: normalizeAmbisonics(raw.ambisonicsConfig),
+    iamfConfig: normalizeIamf(raw.iamfConfig),
+  }
 }
 
 /** Fill fields that older or partial RTDB records may lack, and migrate stage-3 field names. */
@@ -281,7 +301,7 @@ export function normalizeCue(raw: Omit<Partial<Cue>, 'stopOthers'> & LegacyCueFi
     visual: normalizeVisual(rest.visual),
     vj: normalizeMix(rest.vj),
     xr: normalizeXr(rest.xr),
-    trajectoryConfig: normalizeTrajectory(rest.trajectoryConfig),
+    ...cueSpatialOf(rest),
     // RTDB drops empty arrays: a cue with no stored list is for every group.
     targetChannels: (Object.values(rest.targetChannels ?? {}) as string[]).length ? (Object.values(rest.targetChannels ?? {}) as string[]) : ['all'],
     triggers: Object.values(rest.triggers ?? {}),

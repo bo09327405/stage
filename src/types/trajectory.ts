@@ -266,3 +266,9 @@ export function reverbWetAt(d: number, a: TrajAcoustics): number {
   const far = Math.min(1, Math.max(0, d / a.maxDistance))
   return a.reverbSend * (0.15 + 0.85 * Math.sqrt(far))
 }
+
+/** Level at distance `d` from the listener: the 'inverse' model of Web Audio's panner (1 up to refDistance, then falling). */
+export function distanceGain(d: number, a: TrajAcoustics): number {
+  const clamped = Math.min(Math.max(d, a.refDistance), a.maxDistance)
+  return a.refDistance / (a.refDistance + a.rolloffFactor * (clamped - a.refDistance))
+}

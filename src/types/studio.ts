@@ -5,6 +5,7 @@
  */
 
 import { curveValueAt } from '../studio/curves'
+import { normalizeAmbisonics, normalizeIamf, resolveSpatialFormat, trajectoryOnFor, type AmbisonicsConfig, type IamfConfig, type SpatialFormat } from './spatialAudio'
 import { normalizeTrajectory, type TrajectoryConfig } from './trajectory'
 
 /**
@@ -228,6 +229,12 @@ export interface StudioTrack {
   input: TrackInput
   /** 3D binaural placement and movement of this track (types/trajectory.ts); `enabled: false` = plain stereo. */
   trajectoryConfig: TrajectoryConfig
+  /** Which spatial treatment the track has; `trajectoryConfig.enabled` is on exactly when this is `trajectory_binaural`. */
+  format: SpatialFormat
+  /** Ambisonics soundfield settings (used when `format` is `ambisonics`). */
+  ambisonicsConfig: AmbisonicsConfig
+  /** Eclipsa Audio (IAMF) settings (used when `format` is `eclipsa_iamf`). */
+  iamfConfig: IamfConfig
 }
 
 export interface StudioProject {
@@ -302,7 +309,19 @@ export function normalizeTrack(id: string, raw: Partial<StudioTrack> = {}): Stud
       }),
     ),
     input: normalizeInput(raw.input),
-    trajectoryConfig: normalizeTrajectory(raw.trajectoryConfig),
+    ...spatialOf(raw),
+  }
+}
+
+/** The track's spatial fields, with the trajectory switch following the format. */
+function spatialOf(raw: Partial<StudioTrack>) {
+  const traj = normalizeTrajectory(raw.trajectoryConfig)
+  const format = resolveSpatialFormat(raw.format, traj.enabled)
+  return {
+    format,
+    trajectoryConfig: traj.enabled === trajectoryOnFor(format) ? traj : { ...traj, enabled: trajectoryOnFor(format) },
+    ambisonicsConfig: normalizeAmbisonics(raw.ambisonicsConfig),
+    iamfConfig: normalizeIamf(raw.iamfConfig),
   }
 }
 

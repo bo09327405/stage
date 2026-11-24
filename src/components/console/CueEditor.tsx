@@ -46,7 +46,8 @@ import { isYoutubeCue, youtubeIdOf, youtubeStartOf, youtubeWatchUrl } from '../.
 import { recordProjectMedia, recordSharedMedia } from '../../services/mediaLibrary'
 import { InboxPickerModal } from './InboxPickerModal'
 import { StudioBinding } from './StudioBinding'
-import { CueTrajectory } from './CueTrajectory'
+import { CueSpatial } from './CueSpatial'
+import { DEFAULT_AMBISONICS, DEFAULT_IAMF } from '../../types/spatialAudio'
 import { DEFAULT_TRAJECTORY } from '../../types/trajectory'
 import { WaveformTrimmer } from './WaveformTrimmer'
 import { XR_MODE_LABELS, newXrScene, xrProblem } from '../../types/xr'
@@ -243,7 +244,10 @@ export function CueEditor({
         xr: draft.type === 'AUDIENCE_XR' ? draft.xr : null,
         xrSceneId: xrBound ? draft.xrSceneId : '',
         // Only audio file cues carry a 3D placement (studio cues use their tracks').
+        format: draft.type === 'AUDIO' && !studioMode ? draft.format : 'standard',
         trajectoryConfig: draft.type === 'AUDIO' && !studioMode ? draft.trajectoryConfig : DEFAULT_TRAJECTORY,
+        ambisonicsConfig: draft.type === 'AUDIO' && !studioMode ? draft.ambisonicsConfig : DEFAULT_AMBISONICS,
+        iamfConfig: draft.type === 'AUDIO' && !studioMode ? draft.iamfConfig : DEFAULT_IAMF,
       })
     } catch (err) {
       setError((err as Error).message)
@@ -801,7 +805,13 @@ export function CueEditor({
             )}
 
             {draft.type === 'AUDIO' && !studioMode && draft.targetUrl && !isYoutubeCue(draft) && (
-              <CueTrajectory title={draft.title} url={draft.targetUrl} value={draft.trajectoryConfig} onChange={(next) => set('trajectoryConfig', next)} />
+              <CueSpatial
+                title={draft.title}
+                url={draft.targetUrl}
+                value={{ format: draft.format, trajectoryConfig: draft.trajectoryConfig, ambisonicsConfig: draft.ambisonicsConfig, iamfConfig: draft.iamfConfig }}
+                onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))}
+                onProbed={(p) => p.durationSec && setDraft((d) => (d.duration ? d : { ...d, duration: Math.round(p.durationSec! * 100) / 100 }))}
+              />
             )}
             {studioMode && (
               <p className="rounded-lg bg-white/[0.03] p-3 text-xs leading-relaxed text-white/45">

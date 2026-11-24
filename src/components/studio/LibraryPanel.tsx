@@ -222,7 +222,7 @@ export function LibraryPanel({
         ) : (
           <>
             <MediaUploadButton
-              accept="audio/*,video/*"
+              accept="audio/*,video/*,.iamf"
               folder={uploadFolder}
               library={{ projectId, source: 'studio', shared: source === 'default', studioId: source === 'project' ? studioId : null }}
               upload={(file) => uploadStudioFile(file, { folder: uploadFolder, name: file.name })}

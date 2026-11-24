@@ -45,6 +45,8 @@ const r2Url = (key: string) => `/api/r2/o/${encodeKey(key)}`
 const TYPES: Record<string, string> = {
   wav: 'audio/wav', mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg',
   flac: 'audio/flac', aif: 'audio/aiff', aiff: 'audio/aiff', webm: 'audio/webm', mp4: 'video/mp4', mov: 'video/quicktime',
+  // Eclipsa Audio (IAMF) stream: decoded in the browser by a WebAssembly decoder.
+  iamf: 'audio/iamf',
   json: 'application/json', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
   // 3D models for XR cues (a .gltf must be self-contained).
   glb: 'model/gltf-binary', gltf: 'model/gltf+json',

@@ -69,7 +69,7 @@ export function createSpatial(ctx: BaseAudioContext, cfg: TrajectoryConfig): Spa
   return { airLowpass, panner, wetBus, send }
 }
 
-interface SpatialCurves {
+export interface SpatialCurves {
   x: Float32Array
   y: Float32Array
   z: Float32Array
@@ -78,10 +78,10 @@ interface SpatialCurves {
 }
 
 /** Maps `dt` seconds into a stretch to a path time: here simply `t0 + dt` (a negative path time waits at the path's start). */
-const linear = (t0: number) => (dt: number) => t0 + dt
+export const linear = (t0: number) => (dt: number) => t0 + dt
 
 /** The path sampled over `length` seconds; `timeAt(dt)` gives the path time `dt` seconds into the stretch. */
-function sampleCurves(cfg: TrajectoryConfig, timeAt: (dt: number) => number, length: number, rate = RATE): SpatialCurves {
+export function sampleCurves(cfg: TrajectoryConfig, timeAt: (dt: number) => number, length: number, rate = RATE): SpatialCurves {
   const path = buildPath(cfg)
   const steps = Math.max(2, Math.min(MAX_STEPS, Math.ceil(length * rate)))
   const c: SpatialCurves = { x: new Float32Array(steps), y: new Float32Array(steps), z: new Float32Array(steps), cutoff: new Float32Array(steps), send: new Float32Array(steps) }

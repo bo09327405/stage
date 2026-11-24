@@ -51,4 +51,4 @@ export const ZOOM_MAX = 1200
 export const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z))
 
 /** Files that look like audio (by type, or by extension when the OS gives no type). */
-export const isAudioFile = (f: File) => /^(audio|video)\//.test(f.type) || /\.(mp3|wav|wave|webm|ogg|oga|opus|m4a|aac|flac|aif|aiff|mp4|mov)$/i.test(f.name)
+export const isAudioFile = (f: File) => /^(audio|video)\//.test(f.type) || /\.(mp3|wav|wave|webm|ogg|oga|opus|m4a|aac|flac|aif|aiff|mp4|mov|iamf)$/i.test(f.name)

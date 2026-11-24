@@ -1,5 +1,7 @@
 import { TRACK_PARAMS, filterHz, laneValueAt, projectLength, regionGainAt, sortedTracks, type StudioProject, type StudioRegion, type StudioTrack } from '../types/studio'
 import { SAMPLE_RATE, bufferOffset, regionBuffer } from './audio'
+import { iamfRegionBuffer } from './iamfDecoder'
+import { createAmbiRenderer, createFoaEncoder, scheduleFoaEncoder, type AmbiRenderer } from './ambisonics'
 import { createSpatial, effectiveTrajectory, scheduleSpatialPath, trackPathOrigin, type SpatialNodes } from './spatial'
 
 /*
@@ -13,6 +15,10 @@ import { createSpatial, effectiveTrajectory, scheduleSpatialPath, trackPathOrigi
  *
  * A track with a 3D trajectory swaps the stereo pan for the binaural chain of studio/spatial.ts
  * (low-pass → HRTF panner, plus a distance-driven reverb send); its echoes join the master unpanned.
+ *
+ * An Ambisonics track feeds its multichannel regions to an Omnitone renderer (studio/ambisonics.ts) whose binaural
+ * stereo then runs through the track's EQ and fader like any other source. Trajectory tracks listed in its busInputs
+ * are encoded into the soundfield (mono → first order) instead of going through their own HRTF panner.
  */
 
 export interface TrackNodes {
@@ -28,8 +34,12 @@ export interface TrackNodes {
   delaySend: GainNode
   delay: DelayNode
   feedback: GainNode
+  /** Where the track's regions feed in: the high-pass, or the soundfield renderer of an Ambisonics track. */
+  source: AudioNode
   /** Present while the track has a 3D trajectory (then `pan` is not in the signal path). */
   spatial?: SpatialNodes
+  /** Present on an Ambisonics track. */
+  ambi?: AmbiRenderer
 }
 
 export interface MixGraph {
@@ -38,13 +48,36 @@ export interface MixGraph {
   sources: AudioBufferSourceNode[]
 }
 
+/**
+ * Build the soundfield renderers the project's Ambisonics tracks need (their HRIRs load asynchronously, so this runs
+ * before the synchronous buildMix). The caller disposes them when the graph is torn down.
+ */
+export async function prepareAmbisonics(ctx: BaseAudioContext, project: StudioProject, trackIds?: string[]): Promise<Map<string, AmbiRenderer>> {
+  const out = new Map<string, AmbiRenderer>()
+  for (const t of sortedTracks(project)) {
+    if (t.format !== 'ambisonics' || (trackIds && !trackIds.includes(t.id))) continue
+    try {
+      out.set(t.id, await createAmbiRenderer(ctx, t.ambisonicsConfig))
+    } catch (err) {
+      console.warn('Ambisonics renderer failed', err)
+    }
+  }
+  return out
+}
+
 /** Seconds of tail to render after the last region when reverb / delay are in use. */
 export const TAIL = 2
 
 /** Load (and process) every region's buffer the mix needs. */
 export async function loadRegionBuffers(project: StudioProject, regionIds?: string[]) {
   const regions = Object.values(project.regions).filter((r) => !regionIds || regionIds.includes(r.id))
-  const entries = await Promise.all(regions.map(async (r) => [r.id, await regionBuffer(r)] as const))
+  // An Eclipsa (IAMF) track's regions go through the IAMF decoder; everything else is an ordinary decoded file.
+  const entries = await Promise.all(
+    regions.map(async (r) => {
+      const track = project.tracks[r.trackId]
+      return [r.id, track?.format === 'eclipsa_iamf' ? await iamfRegionBuffer(r, track.iamfConfig) : await regionBuffer(r)] as const
+    }),
+  )
   return new Map<string, AudioBuffer>(entries)
 }
 
@@ -79,6 +112,7 @@ export function applyTrack(ctx: BaseAudioContext, nodes: TrackNodes, track: Stud
   setP(nodes.volume.gain, trackAudible(track, anySolo) ? track.volume : 0)
   // Automated parameters are driven by their curves (scheduled in buildMix), not the knobs.
   if (!track.automation.pan?.points.length) setP(nodes.pan.pan, track.pan)
+  nodes.ambi?.setRotation(track.ambisonicsConfig.rotationOffset)
   setP(nodes.reverbSend.gain, track.fx.reverb)
   setP(nodes.delaySend.gain, track.fx.delay)
   setP(nodes.delay.delayTime, track.fx.delayTime)
@@ -93,7 +127,7 @@ export function buildMix(
   ctx: BaseAudioContext,
   project: StudioProject,
   buffers: Map<string, AudioBuffer>,
-  { from = 0, when = ctx.currentTime, trackIds }: { from?: number; when?: number; trackIds?: string[] } = {},
+  { from = 0, when = ctx.currentTime, trackIds, ambi }: { from?: number; when?: number; trackIds?: string[]; ambi?: Map<string, AmbiRenderer> } = {},
 ): MixGraph {
   const end = projectLength(project) + TAIL
   const master = new GainNode(ctx, { gain: project.masterVolume })
@@ -120,10 +154,24 @@ export function buildMix(
       chainEnd = chainEnd.connect(comp).connect(makeup)
     }
     chainEnd.connect(lowpass).connect(volume).connect(autoGain)
-    const spatial = track.trajectoryConfig.enabled ? createSpatial(ctx, effectiveTrajectory(project, track)) : null
-    // Where echoes and reverb return to: the stereo pan, or (binaural) straight to the master.
+    // An Ambisonics track decodes its soundfield first; the rest of the chain then works on its binaural stereo.
+    const field = track.format === 'ambisonics' ? ambi?.get(track.id) : undefined
+    if (field) field.output.connect(highpass)
+    // A trajectory track listed in an Ambisonics track's bus is encoded into that soundfield instead of panned.
+    const bus = track.trajectoryConfig.enabled
+      ? ordered.find((o) => o.id !== track.id && o.format === 'ambisonics' && ambi?.has(o.id) && o.ambisonicsConfig.busInputs.includes(track.id))
+      : undefined
+    const spatial = track.trajectoryConfig.enabled && !bus ? createSpatial(ctx, effectiveTrajectory(project, track)) : null
+    const encoder = bus ? createFoaEncoder(ctx) : null
+    // Where echoes and reverb return to: the stereo pan, or (binaural / encoded) straight to the master.
     let out: AudioNode = pan
-    if (spatial) {
+    if (encoder && bus) {
+      autoGain.connect(encoder.input)
+      encoder.output.connect(ambi!.get(bus.id)!.input)
+      const wet = new GainNode(ctx)
+      wet.connect(master)
+      out = wet
+    } else if (spatial) {
       autoGain.connect(spatial.airLowpass)
       spatial.panner.connect(master)
       spatial.wetBus.connect(master)
@@ -142,10 +190,11 @@ export function buildMix(
     autoGain.connect(delaySend).connect(delay).connect(out)
     delay.connect(feedback).connect(delay)
 
-    const nodes: TrackNodes = { highpass, low, mid, high, lowpass, volume, autoGain, pan, reverbSend, delaySend, delay, feedback, ...(spatial ? { spatial } : {}) }
+    const nodes: TrackNodes = { highpass, low, mid, high, lowpass, volume, autoGain, pan, reverbSend, delaySend, delay, feedback, source: field ? field.input : highpass, ...(spatial ? { spatial } : {}), ...(field ? { ambi: field } : {}) }
     applyTrack(ctx, nodes, track, anySolo)
     scheduleTrackAutomation(track, nodes, from, when, end)
     if (spatial) scheduleSpatialPath(spatial, effectiveTrajectory(project, track), trackPathOrigin(project, track.id), from, when, end)
+    if (encoder) scheduleFoaEncoder(encoder, effectiveTrajectory(project, track), trackPathOrigin(project, track.id), from, when, end)
     tracks.set(track.id, nodes)
   }
 
@@ -156,7 +205,7 @@ export function buildMix(
     if (!nodes || !buffer || r.muted) continue
     const end = r.start + r.duration
     if (end <= from) continue
-    sources.push(scheduleRegion(ctx, r, buffer, nodes.highpass, from, when))
+    sources.push(scheduleRegion(ctx, r, buffer, nodes.source, from, when))
   }
   return { master, tracks, sources }
 }
@@ -212,6 +261,7 @@ export async function renderMix(
   const seconds = fixed ?? Math.max(0.1, end + (usesTail(project, trackIds) ? TAIL : 0))
   const ctx = new OfflineAudioContext(2, Math.ceil(seconds * sampleRate), sampleRate)
   const buffers = await loadRegionBuffers(project, regions.map((r) => r.id))
-  buildMix(ctx, project, buffers, { from: 0, when: 0, trackIds })
-  return ctx.startRendering()
+  const ambi = await prepareAmbisonics(ctx, project, trackIds)
+  buildMix(ctx, project, buffers, { from: 0, when: 0, trackIds, ambi })
+  return ctx.startRendering().finally(() => ambi.forEach((a) => a.dispose()))
 }
