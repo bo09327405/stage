@@ -30,6 +30,17 @@ export interface AmbiRenderer {
   dispose(): void
 }
 
+/**
+ * Omnitone's second / third order rotator reads the matrix in a different basis than its first order one: its
+ * l = 1 block is multiplied by diag(−1, 1, −1) (a half turn about the vertical axis) on the way in. To turn the field
+ * the same way at every order, hand the HOA rotator M·diag(−1, 1, −1): the x and z columns negated.
+ */
+export function omnitoneMatrix(order: AmbisonicOrder, m: ArrayLike<number>): Float32Array {
+  const o = Float32Array.from(m as ArrayLike<number> as number[])
+  if (order > 1) for (const i of [0, 1, 2, 6, 7, 8]) o[i] = -o[i]
+  return o
+}
+
 export async function createAmbiRenderer(ctx: BaseAudioContext, config: Pick<AmbisonicsConfig, 'order' | 'channelLayout' | 'rotationOffset'>): Promise<AmbiRenderer> {
   const { default: Omnitone } = await import('omnitone')
   const order = config.order
@@ -54,7 +65,7 @@ export async function createAmbiRenderer(ctx: BaseAudioContext, config: Pick<Amb
     nodes.push(split, merge)
   } else input.connect(renderer.input)
 
-  renderer.setRotationMatrix3(fieldRotation(config.rotationOffset))
+  renderer.setRotationMatrix3(omnitoneMatrix(order, fieldRotation(config.rotationOffset)))
 
   // The energy tap: only built when somebody looks.
   let tap: { analysers: AnalyserNode[]; split: ChannelSplitterNode; buf: Float32Array<ArrayBuffer>[] } | null = null
@@ -85,8 +96,8 @@ export async function createAmbiRenderer(ctx: BaseAudioContext, config: Pick<Amb
     order,
     input,
     output: renderer.output,
-    setRotation: (r) => renderer.setRotationMatrix3(fieldRotation(r)),
-    setMatrix: (m) => renderer.setRotationMatrix3(m),
+    setRotation: (r) => renderer.setRotationMatrix3(omnitoneMatrix(order, fieldRotation(r))),
+    setMatrix: (m) => renderer.setRotationMatrix3(omnitoneMatrix(order, m)),
     covariance,
     dispose() {
       for (const n of nodes) n.disconnect()

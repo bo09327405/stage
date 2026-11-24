@@ -53,6 +53,7 @@ export function SpatialPanel({
           value={track.ambisonicsConfig}
           onSave={(next, label) => onTrack(track, { ambisonicsConfig: next }, `「${track.name}」${label}`)}
           channels={probe?.channels ?? null}
+          durationSec={probe?.durationSec ?? region?.sourceDuration ?? null}
           audition={{
             context: () => player.context,
             output: () => player.output(),

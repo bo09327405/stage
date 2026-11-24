@@ -358,6 +358,7 @@ export default function XrPlayer({
     const look = new THREE.Vector3()
     const lastLook = new THREE.Vector3()
     let headSent = false
+    let lastSent = 0
     renderer.setAnimationLoop((_time: number, frame?: XRFrame) => {
       const now = latest.current
       if (now.scene !== applied) {
@@ -387,15 +388,18 @@ export default function XrPlayer({
         const tracking = !!device.reading || renderer.xr.isPresenting
         if (tracking) {
           viewer.getWorldDirection(look)
-          if (look.distanceToSquared(lastLook) > 4e-6) {
+          if (look.distanceToSquared(lastLook) > 4e-6 || performance.now() - lastSent > 300) {
             lastLook.copy(look)
-            stageAudio.setListenerDirection({ x: look.x, y: look.y, z: look.z })
+            lastSent = performance.now()
+            // The view's rotation (local → scene), column-major 3×3: the audio engine turns the sound field the other way.
+            const e = viewer.matrixWorld.elements
+            stageAudio.setListenerOrientation([e[0], e[1], e[2], e[4], e[5], e[6], e[8], e[9], e[10]], 'xr')
           }
           headSent = true
         } else if (headSent) {
           headSent = false
           lastLook.set(0, 0, 0)
-          stageAudio.setListenerDirection(null)
+          stageAudio.setListenerOrientation(null, 'xr')
         }
       }
 
@@ -480,7 +484,7 @@ export default function XrPlayer({
     return () => {
       api.current = null
       renderer.setAnimationLoop(null)
-      if (headSent) stageAudio.setListenerDirection(null)
+      if (headSent) stageAudio.setListenerOrientation(null, 'xr')
       session?.end().catch(() => {})
       stopGyro()
       observer.disconnect()

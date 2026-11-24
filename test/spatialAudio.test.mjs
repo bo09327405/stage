@@ -100,3 +100,41 @@ test('foaPowerToward: a source in front is loudest towards the front, silent beh
   close(foaPowerToward(cov, { x: 0, y: 0, z: 1 }), 0)
   assert.ok(foaPowerToward(cov, { x: 1, y: 0, z: 0 }) > 0.2 && foaPowerToward(cov, { x: 1, y: 0, z: 0 }) < 0.3)
 })
+
+import { headFieldMatrix, mul3 } from '../src/types/spatialAudio.ts'
+import { deviceMatrix, headingOf, lookDirection, recentre } from '../src/utils/deviceOrientation.ts'
+
+test('mul3: identity and order (apply right matrix first)', () => {
+  const I = Float32Array.of(1, 0, 0, 0, 1, 0, 0, 0, 1)
+  const yaw90 = fieldRotation({ yaw: 90, pitch: 0, roll: 0 })
+  vec(applyMatrix3(mul3(I, yaw90), { x: 0, y: 0, z: -1 }), 1, 0, 0)
+  // yaw 90 then pitch 90: front → right, then pitch lifts "ahead" — a right-pointing vector stays right
+  const both = mul3(fieldRotation({ yaw: 0, pitch: 90, roll: 0 }), yaw90)
+  vec(applyMatrix3(both, { x: 0, y: 0, z: -1 }), 1, 0, 0)
+})
+
+test('headFieldMatrix: a head turned right moves a front sound to the left; no head = the offset', () => {
+  const off = { yaw: 0, pitch: 0, roll: 0 }
+  const headRight = fieldRotation({ yaw: 90, pitch: 0, roll: 0 }) // looking 90° to the right
+  vec(applyMatrix3(headFieldMatrix(headRight, off), { x: 0, y: 0, z: -1 }), -1, 0, 0)
+  vec(applyMatrix3(headFieldMatrix(null, { yaw: 90, pitch: 0, roll: 0 }), { x: 0, y: 0, z: -1 }), 1, 0, 0)
+  // offset first, head second: offset 90° (front → right), head turned right 90° → that sound is now straight ahead
+  vec(applyMatrix3(headFieldMatrix(headRight, { yaw: 90, pitch: 0, roll: 0 }), { x: 0, y: 0, z: -1 }), 0, 0, -1)
+})
+
+test('deviceMatrix: an upright phone looks along −Z; alpha turns the heading', () => {
+  vec(lookDirection(deviceMatrix(0, 90, 0)), 0, 0, -1)
+  close(headingOf(deviceMatrix(0, 90, 0)), 0)
+  // Device alpha grows counter-clockwise (compass heading goes the other way): +90° alpha looks to the left (−X).
+  vec(lookDirection(deviceMatrix(90, 90, 0)), -1, 0, 0)
+  close(Math.abs(headingOf(deviceMatrix(90, 90, 0))), 90)
+  // tilted back (beta 45): looks above the horizon
+  assert.ok(lookDirection(deviceMatrix(0, 135, 0)).y > 0.5 || lookDirection(deviceMatrix(0, 45, 0)).y > 0.5)
+})
+
+test('recentre: whatever the phone looks at becomes straight ahead', () => {
+  const m = deviceMatrix(130, 90, 0)
+  const h = headingOf(m)
+  close(headingOf(recentre(m, h)), 0, 1e-3)
+  vec(lookDirection(recentre(m, h)), 0, 0, -1)
+})

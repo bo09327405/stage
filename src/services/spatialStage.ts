@@ -1,5 +1,7 @@
+import { createAmbiRenderer, type AmbiRenderer } from '../studio/ambisonics'
 import { SpatialRunner } from '../studio/spatial'
 import { activeEndAt, activeStartAt, segmentLength, type ActiveCue } from '../types/cue'
+import { headFieldMatrix, type AmbisonicsConfig } from '../types/spatialAudio'
 import type { TrajectoryConfig } from '../types/trajectory'
 import { fadeCurve } from '../utils/fadeCurve'
 import type { FadeShape } from '../types/studio'
@@ -22,6 +24,8 @@ const CUT_FADE = 0.03
 const LEAD = 0.03
 /** Decoded files kept for the next GO (older ones are dropped; voices hold what they play). */
 const CACHE_MAX = 4
+/** …and never more than this many bytes of decoded audio (a few minutes of 4-channel sound is already a lot for a phone). */
+const CACHE_BYTES = 160 * 1024 * 1024
 
 /** One sound of a spatial cue: a file, a studio's bed (no trajectory) or a studio track with its own path. */
 export interface SpatialPart {
@@ -30,6 +34,12 @@ export interface SpatialPart {
   traj: TrajectoryConfig | null
   /** Seconds into the buffer where the path clock starts (a studio track's first region). */
   origin: number
+  /** An Ambisonics soundfield (4 / 9 / 16 channels): decoded to binaural with Omnitone, rotated with the head. */
+  ambi?: AmbisonicsConfig
+  /** Names this part's renderer for pre-warming at STANDBY (the cue id, plus the part's index). */
+  key?: string
+  /** Called when the voice is released: frees a big decoded buffer that would otherwise stay cached. */
+  release?: () => void
 }
 
 /** What the stage engine lends this module. */
@@ -50,6 +60,8 @@ interface SVoice {
   live: GainNode
   duck: GainNode
   runners: (SpatialRunner | null)[]
+  /** The soundfield decoders of Ambisonics parts (null for the other parts). */
+  renderers: (AmbiRenderer | null)[]
   inputs: GainNode[]
   sources: AudioBufferSourceNode[]
   timers: number[]
@@ -62,6 +74,13 @@ interface SVoice {
 
 let decoder: OfflineAudioContext | null = null
 const cache = new Map<string, Promise<AudioBuffer>>()
+const sizes = new Map<string, number>()
+
+/** Forget a decoded file (a finished Ambisonics cue gives its big multichannel buffer back at once). */
+export function dropSpatialBuffer(url: string) {
+  cache.delete(url)
+  sizes.delete(url)
+}
 
 /**
  * Fetch and decode a sound ahead of its GO (STANDBY). Decoding goes through an offline context, so it works before
@@ -81,10 +100,54 @@ export function loadSpatialBuffer(url: string): Promise<AudioBuffer> {
       return res.arrayBuffer()
     })
     .then((data) => decoder!.decodeAudioData(data))
-  job.catch(() => cache.delete(url))
+  job.then((b) => {
+    if (cache.has(url)) sizes.set(url, b.length * b.numberOfChannels * 4)
+  }, () => dropSpatialBuffer(url))
   cache.set(url, job)
-  while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value as string)
+  const total = () => [...sizes.values()].reduce((a, b) => a + b, 0)
+  // Oldest first, but the one just asked for stays.
+  while ((cache.size > CACHE_MAX || total() > CACHE_BYTES) && cache.size > 1) dropSpatialBuffer(cache.keys().next().value as string)
   return job
+}
+
+/* ---------- Ambisonics renderers, built ahead of GO ---------- */
+
+/**
+ * Omnitone has to decode its HRIRs before it can render. At STANDBY the renderer of the next cue is built and kept
+ * here under the part's key; GO takes it (so the first sound comes out at once), and anything unclaimed is disposed
+ * when another cue goes on standby.
+ */
+const prewarmed = new Map<string, Promise<AmbiRenderer>>()
+
+/** How many pre-warmed renderers are waiting (diagnostics / tests). */
+export const prewarmedCount = () => prewarmed.size
+
+/** Bytes of decoded audio the file cache holds (diagnostics / tests). */
+export const spatialCacheBytes = () => [...sizes.values()].reduce((a, b) => a + b, 0)
+
+export function prewarmAmbi(ctx: BaseAudioContext, key: string, config: AmbisonicsConfig) {
+  if (prewarmed.has(key)) return
+  const job = createAmbiRenderer(ctx, config)
+  job.catch(() => prewarmed.delete(key))
+  prewarmed.set(key, job)
+}
+
+/** Dispose every pre-warmed renderer except those whose keys start with `keep`. */
+export function dropPrewarmed(keep = '') {
+  for (const [key, job] of [...prewarmed]) {
+    if (keep && key.startsWith(keep)) continue
+    prewarmed.delete(key)
+    job.then((r) => r.dispose(), () => {})
+  }
+}
+
+async function takeAmbi(ctx: BaseAudioContext, part: SpatialPart): Promise<AmbiRenderer> {
+  const warm = part.key ? prewarmed.get(part.key) : undefined
+  if (warm && part.key) {
+    prewarmed.delete(part.key)
+    return warm
+  }
+  return createAmbiRenderer(ctx, part.ambi!)
 }
 
 export class SpatialStage {
@@ -96,6 +159,11 @@ export class SpatialStage {
   private reverbBus: ConvolverNode | null = null
   private listenerDir: { x: number; y: number; z: number } | null = null
   private listenerApplied = ''
+  /** The head's orientation (column-major 3×3, local → scene) while a view or the gyroscope reports it. */
+  private head: ArrayLike<number> | null = null
+  private headWasWanted = false
+  /** Told when a playing sound starts or stops wanting the head's orientation (the page then offers the gyroscope). */
+  onHeadWanted: (wanted: boolean) => void = () => {}
 
   constructor(host: SpatialHost) {
     this.host = host
@@ -169,16 +237,22 @@ export class SpatialStage {
     if (this.host.serverNow() >= activeEndAt(inst)) return
     this.pending.add(id)
     this.wanted.set(id, this.wanted.get(id) ?? inst)
-    Promise.resolve(parts).then(
-      (list) => {
+    Promise.resolve(parts)
+      .then(async (list) => ({ list, decoders: await Promise.all(list.map((p) => (p.ambi ? takeAmbi(this.ctx, p) : null))) }))
+      .then(
+      ({ list, decoders }) => {
         this.pending.delete(id)
         const now = this.wanted.get(id)
         // Gone, retargeted or paused while it decoded: the next sync decides again.
-        if (!now || this.voices.has(id) || now.stopAt != null || now.pausedAt != null) return
-        const voice = this.build(now, list)
+        if (!now || this.voices.has(id) || now.stopAt != null || now.pausedAt != null) {
+          decoders.forEach((d) => d?.dispose())
+          return
+        }
+        const voice = this.build(now, list, decoders)
         this.voices.set(id, voice)
         this.applyLive()
         this.applyListener()
+        this.applyHead()
         this.schedule(voice)
       },
       (err) => {
@@ -188,7 +262,7 @@ export class SpatialStage {
     )
   }
 
-  private build(inst: ActiveCue, parts: SpatialPart[]): SVoice {
+  private build(inst: ActiveCue, parts: SpatialPart[], decoders: (AmbiRenderer | null)[]): SVoice {
     const ctx = this.ctx
     const env = new GainNode(ctx, { gain: 0 })
     const live = new GainNode(ctx)
@@ -197,6 +271,13 @@ export class SpatialStage {
     // One input gain per part: a plain part goes straight to the envelope, a spatial one through its runner.
     const inputs = parts.map(() => new GainNode(ctx))
     const runners = parts.map((p, i) => {
+      const field = decoders[i]
+      if (field) {
+        // A soundfield: decoded to binaural stereo by its renderer.
+        inputs[i].connect(field.input)
+        field.output.connect(env)
+        return null
+      }
       if (!p.traj) {
         inputs[i].connect(env)
         return null
@@ -205,7 +286,7 @@ export class SpatialStage {
       runner.connect(inputs[i], env, this.reverb())
       return runner
     })
-    return { inst, parts, env, live, duck, runners, inputs, sources: [], timers: [], stopping: false, held: false, duckTarget: 1 }
+    return { inst, parts, env, live, duck, runners, renderers: decoders, inputs, sources: [], timers: [], stopping: false, held: false, duckTarget: 1 }
   }
 
   /**
@@ -371,8 +452,11 @@ export class SpatialStage {
     this.voices.delete(id)
     this.stopSources(voice)
     for (const r of voice.runners) r?.dispose()
+    for (const r of voice.renderers) r?.dispose()
     for (const n of [...voice.inputs, voice.env, voice.live, voice.duck]) n.disconnect()
+    for (const p of voice.parts) p.release?.()
     this.applyListener()
+    this.applyHead()
     if (this.voices.size === 0 && this.reverbBus) {
       this.reverbBus.disconnect()
       this.reverbBus = null
@@ -394,12 +478,34 @@ export class SpatialStage {
   /* ---------- head tracking ---------- */
 
   /**
-   * The direction the audience is looking (the XR view or the gyroscope), in scene coordinates; null when no view is
-   * running. It turns the sound field only while a playing sound asks for it (`headTrack`).
+   * The audience's head orientation (a column-major 3×3, local → scene) from the XR view or the gyroscope; null when no
+   * view is running. It turns the sound field only while a playing sound asks for it (`headTrack` / `bindHeadTracking`).
    */
-  setListenerDirection(dir: { x: number; y: number; z: number } | null) {
-    this.listenerDir = dir
+  setListenerOrientation(m: ArrayLike<number> | null) {
+    this.head = m
+    this.listenerDir = m ? { x: -m[6], y: -m[7], z: -m[8] } : null
     this.applyListener()
+    this.applyHead()
+  }
+
+  /** Whether any playing sound wants the head's orientation. */
+  headWanted() {
+    return [...this.voices.values()].some((v) => v.parts.some((p) => p.traj?.headTrack || p.ambi?.bindHeadTracking))
+  }
+
+  /** Turn each soundfield: its own offset, plus the opposite of the head's turn when it is bound to the head. */
+  private applyHead() {
+    for (const v of this.voices.values()) {
+      v.parts.forEach((p, i) => {
+        const r = v.renderers[i]
+        if (r && p.ambi) r.setMatrix(headFieldMatrix(p.ambi.bindHeadTracking ? this.head : null, p.ambi.rotationOffset))
+      })
+    }
+    const wanted = this.headWanted()
+    if (wanted !== this.headWasWanted) {
+      this.headWasWanted = wanted
+      this.onHeadWanted(wanted)
+    }
   }
 
   private applyListener() {

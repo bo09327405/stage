@@ -86,6 +86,7 @@ export function CueSpatial({
               value={value.ambisonicsConfig}
               onSave={(next) => onChange({ ambisonicsConfig: next })}
               channels={probe?.channels ?? null}
+              durationSec={probe?.durationSec ?? null}
               audition={audition}
             />
           )}

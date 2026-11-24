@@ -1,9 +1,11 @@
 import { onValue, ref } from 'firebase/database'
 import { db } from '../services/firebase'
 import type { SpatialPart } from '../services/spatialStage'
-import { normalizeStudio, projectLength, sortedTracks, type StudioProject } from '../types/studio'
-import { encodeWav } from './audio'
-import { TAIL, renderMix } from './mixer'
+import { ambisonicChannels } from '../types/spatialAudio'
+import { normalizeStudio, projectLength, sortedTracks, type StudioProject, type StudioTrack } from '../types/studio'
+import { SAMPLE_RATE, encodeWav } from './audio'
+import { createFoaEncoder, scheduleFoaEncoder } from './ambisonics'
+import { TAIL, loadRegionBuffers, renderMix, scheduleRegion, trackAudible } from './mixer'
 import { effectiveTrajectory, trackPathOrigin } from './spatial'
 
 /**
@@ -30,16 +32,53 @@ interface Entry {
   /** The studio as last read, for the baked (stereo-with-HRTF) WAV the console previews with. */
   raw: unknown
   baked: Promise<string> | null
+  /** The decoded stems were given back (an Ambisonics cue ended): render them again at the next standby / GO. */
+  stale: boolean
 }
 
 const entries = new Map<string, Entry>()
 
-/** Studio → the parts of a spatial cue: the bed (all non-spatial tracks) and one dry stem per spatial track. */
+/**
+ * An Ambisonics track as a dry multichannel stem: its regions (with their fades and gain) plus every trajectory track
+ * listed in its bus, encoded into the soundfield, at the track's fader — no decoding, no EQ: the audience device decodes it
+ * live (rotation, head tracking).
+ */
+async function renderAmbiStem(project: StudioProject, track: StudioTrack, members: StudioTrack[], seconds: number): Promise<AudioBuffer> {
+  const channels = ambisonicChannels(track.ambisonicsConfig.order)
+  const ctx = new OfflineAudioContext(channels, Math.ceil(seconds * SAMPLE_RATE), SAMPLE_RATE)
+  const anySolo = Object.values(project.tracks).some((t) => t.solo)
+  const discrete = (gain: number) => new GainNode(ctx, { gain, channelCount: channels, channelCountMode: 'explicit', channelInterpretation: 'discrete' })
+  const master = discrete(project.masterVolume)
+  master.connect(ctx.destination)
+  const own = discrete(trackAudible(track, anySolo) ? track.volume : 0)
+  own.connect(master)
+  const regionsOf = (t: StudioTrack) => Object.values(project.regions).filter((r) => r.trackId === t.id && !r.muted)
+  const ids = [track, ...members].flatMap((t) => regionsOf(t).map((r) => r.id))
+  const buffers = await loadRegionBuffers(project, ids)
+  for (const r of regionsOf(track)) scheduleRegion(ctx, r, buffers.get(r.id)!, own, 0, 0)
+  for (const m of members) {
+    const enc = createFoaEncoder(ctx)
+    const fader = new GainNode(ctx, { gain: trackAudible(m, anySolo) ? m.volume : 0 })
+    fader.connect(enc.input)
+    enc.output.connect(own)
+    for (const r of regionsOf(m)) scheduleRegion(ctx, r, buffers.get(r.id)!, fader, 0, 0)
+    scheduleFoaEncoder(enc, effectiveTrajectory(project, m), trackPathOrigin(project, m.id), 0, 0, seconds)
+  }
+  return ctx.startRendering()
+}
+
+/**
+ * Studio → the parts of a spatial cue: the bed (all plain tracks), one dry stem per trajectory track, and one soundfield
+ * stem per Ambisonics track (with the trajectory tracks of its bus folded in).
+ */
 async function renderSpatial(project: StudioProject): Promise<SpatialPart[]> {
   const tracks = sortedTracks(project)
   const hasRegions = (id: string) => Object.values(project.regions).some((r) => r.trackId === id && !r.muted)
-  const spatial = tracks.filter((t) => t.trajectoryConfig.enabled && hasRegions(t.id))
-  const bedIds = tracks.filter((t) => !t.trajectoryConfig.enabled && hasRegions(t.id)).map((t) => t.id)
+  const ambiTracks = tracks.filter((t) => t.format === 'ambisonics' && (hasRegions(t.id) || t.ambisonicsConfig.busInputs.length > 0))
+  const memberOf = new Map<string, StudioTrack>()
+  for (const a of ambiTracks) for (const id of a.ambisonicsConfig.busInputs) if (project.tracks[id]?.trajectoryConfig.enabled && !memberOf.has(id)) memberOf.set(id, a)
+  const spatial = tracks.filter((t) => t.trajectoryConfig.enabled && hasRegions(t.id) && !memberOf.has(t.id))
+  const bedIds = tracks.filter((t) => !t.trajectoryConfig.enabled && t.format !== 'ambisonics' && hasRegions(t.id)).map((t) => t.id)
   // One length for everything, so a looping cue wraps all parts at the same moment.
   const seconds = Math.max(0.1, projectLength(project) + TAIL)
   const parts: SpatialPart[] = []
@@ -53,12 +92,17 @@ async function renderSpatial(project: StudioProject): Promise<SpatialPart[]> {
       origin: trackPathOrigin(project, t.id),
     })
   }
+  for (const a of ambiTracks) {
+    const members = [...memberOf].filter(([, owner]) => owner.id === a.id).map(([id]) => project.tracks[id])
+    parts.push({ buffer: await renderAmbiStem(project, a, members, seconds), traj: null, origin: 0, ambi: a.ambisonicsConfig })
+  }
   return parts
 }
 
-async function render(studioId: string, raw: unknown): Promise<StudioMix> {
+/** Render a studio snapshot into what a device plays (exported for tests). */
+export async function renderStudioMix(studioId: string, raw: unknown): Promise<StudioMix> {
   const project = normalizeStudio(studioId, (raw ?? {}) as Parameters<typeof normalizeStudio>[1])
-  if (Object.values(project.tracks).some((t) => t.trajectoryConfig.enabled)) return { kind: 'spatial', parts: await renderSpatial(project) }
+  if (Object.values(project.tracks).some((t) => t.trajectoryConfig.enabled || t.format === 'ambisonics')) return { kind: 'spatial', parts: await renderSpatial(project) }
   return { kind: 'wav', url: URL.createObjectURL(encodeWav(await renderMix(project), 16)) }
 }
 
@@ -68,7 +112,15 @@ const urlOf = (mix: StudioMix) => (mix.kind === 'wav' ? mix.url : null)
 export function studioMix(projectId: string, studioId: string): Promise<StudioMix> {
   const key = `${projectId}/${studioId}`
   const existing = entries.get(key)
-  if (existing) return existing.mix
+  if (existing) {
+    // Its heavy stems were given back: render them again from the last snapshot.
+    if (existing.stale && existing.raw) {
+      existing.stale = false
+      existing.mix = renderStudioMix(studioId, existing.raw)
+      existing.mix.catch(() => {})
+    }
+    return existing.mix
+  }
   let resolveFirst: (mix: StudioMix) => void = () => {}
   let rejectFirst: (err: Error) => void = () => {}
   const entry: Entry = {
@@ -81,6 +133,7 @@ export function studioMix(projectId: string, studioId: string): Promise<StudioMi
     previous: null,
     raw: null,
     baked: null,
+    stale: false,
   }
   entries.set(key, entry)
   let first = true
@@ -96,7 +149,7 @@ export function studioMix(projectId: string, studioId: string): Promise<StudioMi
       entry.stamp = stamp
       entry.raw = snap.val()
       entry.baked = null
-      const job = render(studioId, snap.val())
+      const job = renderStudioMix(studioId, snap.val())
       if (first) {
         first = false
         job.then(resolveFirst, rejectFirst)
@@ -105,6 +158,7 @@ export function studioMix(projectId: string, studioId: string): Promise<StudioMi
         job.then((mix) => {
           const old = entry.previous
           entry.mix = Promise.resolve(mix)
+          entry.stale = false
           entry.previous = urlOf(mix)
           if (old) setTimeout(() => URL.revokeObjectURL(old), 60_000)
         }, () => {})
@@ -127,6 +181,15 @@ export async function studioMixUrl(projectId: string, studioId: string): Promise
   const entry = entries.get(`${projectId}/${studioId}`)!
   entry.baked ??= renderMix(normalizeStudio(studioId, (entry.raw ?? {}) as Parameters<typeof normalizeStudio>[1])).then((b) => URL.createObjectURL(encodeWav(b, 16)))
   return entry.baked
+}
+
+/**
+ * Give back the decoded stems of a studio cue that has finished (an Ambisonics soundfield is many channels of audio):
+ * the next standby or GO renders them again.
+ */
+export function dropStudioMixBuffers(projectId: string, studioId: string) {
+  const entry = entries.get(`${projectId}/${studioId}`)
+  if (entry) entry.stale = true
 }
 
 /** Render ahead of time (e.g. when a studio cue goes on standby), ignoring errors. */

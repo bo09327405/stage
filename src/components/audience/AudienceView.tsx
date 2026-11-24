@@ -13,6 +13,7 @@ import { hapticMode, playVibration } from '../../services/vibration'
 import { audiencePushStatus, disableAudiencePush, enableAudiencePush, syncAudiencePush, type AudiencePushStatus } from '../../services/audiencePush'
 import { channelColor, channelLabel, reachesChannel, type Announcement } from '../../types/channels'
 import { GroupPicker } from './GroupPicker'
+import { HeadTrackingGate } from './HeadTrackingGate'
 import { useTheatreEngine } from '../../hooks/useTheatreEngine'
 import { stageAudio } from '../../services/audioEngine'
 import { useAnnouncePresence } from '../../services/presence'
@@ -361,6 +362,8 @@ function ShowStage({ show, audienceId }: { show: ShowRef; audienceId: string }) 
           <span className="mt-1 block text-lg font-semibold text-white">{banner.text || '請看畫面'}</span>
         </button>
       )}
+
+      {entered && <HeadTrackingGate />}
 
       {entered && blocked && (
         <button

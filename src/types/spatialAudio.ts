@@ -316,3 +316,25 @@ export function foaPowerToward(cov: ArrayLike<number>, dir: { x: number; y: numb
   for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) p += g[i] * g[j] * cov[i * 4 + j]
   return Math.max(0, p) / 4
 }
+
+/** A·B for column-major 3×3 matrices (apply B first, then A). */
+export function mul3(a: ArrayLike<number>, b: ArrayLike<number>): Float32Array {
+  const o = new Float32Array(9)
+  for (let r = 0; r < 3; r++)
+    for (let c = 0; c < 3; c++) {
+      let v = 0
+      for (let k = 0; k < 3; k++) v += a[k * 3 + r] * b[c * 3 + k]
+      o[c * 3 + r] = v
+    }
+  return o
+}
+
+/**
+ * The rotation to give an Ambisonics soundfield when the listener's head has the orientation `head` (a column-major
+ * 3×3 rotation, local → scene) and the file carries the correction `offset`: first the offset, then the field turns
+ * the opposite way to the head, so a sound stays where it is in the room. Without a head: the offset alone.
+ */
+export function headFieldMatrix(head: ArrayLike<number> | null, offset: Rotation): Float32Array {
+  const off = fieldRotation(offset)
+  return head ? mul3(transpose3(head), off) : off
+}

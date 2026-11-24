@@ -48,6 +48,8 @@ export interface AmbisonicsEditorProps {
   onSave: (next: AmbisonicsConfig, label: string) => void
   /** Channels of the sound this soundfield plays (to warn when they do not match the order). */
   channels?: number | null
+  /** Its length, seconds: a long multichannel file is a lot of memory once decoded on a phone. */
+  durationSec?: number | null
   audition: {
     context: () => AudioContext
     output: () => AudioNode
@@ -65,7 +67,7 @@ export interface AmbisonicsEditorProps {
  * Ambisonics soundfield editor: order and channel layout, the rotation that turns the field so its front faces the stage
  * (knobs and numbers, heard live through the same Omnitone decoder the audience gets), the energy radar and head-tracking.
  */
-export function AmbisonicsEditor({ title, resetKey, value, onSave, channels, audition, liveRenderer, bus }: AmbisonicsEditorProps) {
+export function AmbisonicsEditor({ title, resetKey, value, onSave, channels, durationSec, audition, liveRenderer, bus }: AmbisonicsEditorProps) {
   const [draft, setDraft] = useState<AmbisonicsConfig>(value)
   const draftRef = useRef(draft)
   const [gesture, setGesture] = useState(false)
@@ -137,6 +139,8 @@ export function AmbisonicsEditor({ title, resetKey, value, onSave, channels, aud
   const expected = ambisonicChannels(draft.order)
   const mismatch = channels != null && channels !== expected
   const rot = draft.rotationOffset
+  // Audience phones keep the whole soundfield decoded in memory (32-bit samples, 48 kHz).
+  const decodedMB = channels && durationSec ? (Math.min(channels, expected) * 48000 * 4 * durationSec) / 1048576 : 0
 
   return (
     <div data-ambisonics-panel>
@@ -144,6 +148,11 @@ export function AmbisonicsEditor({ title, resetKey, value, onSave, channels, aud
         <p className="text-[11px] leading-relaxed text-white/45">
           球面聲場以 Omnitone 解碼成雙耳立體聲（請戴耳機）。旋轉校正會讓聲場的「前方」對準舞台 −Z；觀眾端也用同一個解碼器。
         </p>
+        {decodedMB > 100 && (
+          <p className="rounded-md bg-amber-500/15 px-2.5 py-1.5 text-[11px] text-amber-200">
+            解碼後約 {Math.round(decodedMB)} MB：觀眾手機要把整段聲場放在記憶體裡，舊款手機可能吃緊。建議縮短檔案、切成多個 Cue，或改用較低階數（1 階最省）。
+          </p>
+        )}
         {channels != null && (
           <p className={`rounded-md px-2.5 py-1.5 text-[11px] ${mismatch ? 'bg-amber-500/15 text-amber-200' : 'bg-white/[0.06] text-white/60'}`}>
             聲音檔：{channels} 聲道

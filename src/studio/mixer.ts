@@ -229,7 +229,7 @@ function scheduleTrackAutomation(track: StudioTrack, nodes: TrackNodes, from: nu
 }
 
 /** Play one region into a track input, starting `from` timeline seconds at context time `when`. */
-function scheduleRegion(ctx: BaseAudioContext, r: StudioRegion, buffer: AudioBuffer, input: AudioNode, from: number, when: number) {
+export function scheduleRegion(ctx: BaseAudioContext, r: StudioRegion, buffer: AudioBuffer, input: AudioNode, from: number, when: number) {
   const skip = Math.max(0, from - r.start) // already past part of the region
   const startTime = when + Math.max(0, r.start - from)
   const length = r.duration - skip

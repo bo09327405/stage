@@ -12,8 +12,8 @@ import {
   type HitTrigger,
   type Cue,
 } from '../types/cue'
-import { prepareStudioMix, studioMix } from '../studio/cueMix'
-import { SpatialStage, loadSpatialBuffer, type SpatialPart } from './spatialStage'
+import { dropStudioMixBuffers, prepareStudioMix, studioMix } from '../studio/cueMix'
+import { SpatialStage, dropPrewarmed, dropSpatialBuffer, loadSpatialBuffer, prewarmAmbi, type SpatialPart } from './spatialStage'
 import type { FadeShape } from '../types/studio'
 import { fadeCurve } from '../utils/fadeCurve'
 import { isYoutubeCue } from '../utils/youtube'
@@ -167,6 +167,7 @@ export class StageAudioEngine {
   private audienceChannel: string | null = null
   setChannel(channel: string | null) {
     this.audienceChannel = channel
+    if (this.standby) this.prepare(this.standby)
   }
 
   /** A short two-tone chime for announcements (needs the context unlocked; silent otherwise). */
@@ -218,6 +219,7 @@ export class StageAudioEngine {
       liveLevel: (inst) => this.levelFor(inst.instanceId, inst.cue),
       load: (inst) => this.loadSpatialParts(inst),
     })
+    this.spatial.onHeadWanted = this.headWantedCb
 
     const silent = silentWavUrl()
     const makeSlot = (el: HTMLMediaElement, duckable: boolean): Slot => {
@@ -247,6 +249,8 @@ export class StageAudioEngine {
     setTimeout(() => URL.revokeObjectURL(silent), 5000)
 
     ctx.resume().catch(() => {})
+    // The cue already on standby can now build its decoders.
+    if (this.standby) this.prepare(this.standby)
     // Gesture-time setup for background / lock-screen playback, and a ticker the OS won't throttle.
     if (keepAlive) startBackgroundPlayback(ctx, () => this.resume())
     startTicker(TICK_MS, () => this.tick())
@@ -440,7 +444,7 @@ export class StageAudioEngine {
 
   /** A file cue that plays through the spatial stage (studio cues are decided when their mix is ready). */
   private isSpatialFile(cue: Cue) {
-    return cue.type === 'AUDIO' && !cue.studioId && !!cue.targetUrl && cue.trajectoryConfig.enabled
+    return cue.type === 'AUDIO' && !cue.studioId && !!cue.targetUrl && (cue.trajectoryConfig.enabled || cue.format === 'ambisonics')
   }
 
   /** The decoded sound of a spatial cue: a file as one part, or a studio's bed and stems. */
@@ -449,15 +453,33 @@ export class StageAudioEngine {
     if (cue.studioId && this.projectId) {
       const mix = await studioMix(this.projectId, cue.studioId)
       if (mix.kind !== 'spatial') throw new Error('not a spatial studio')
-      return mix.parts
+      const { projectId } = this
+      const studioId = cue.studioId
+      // A soundfield stem is big: it is named for pre-warming and gives its buffer back when the voice is released.
+      return mix.parts.map((p, i) => (p.ambi ? { ...p, key: `${cue.id}#${i}`, release: () => dropStudioMixBuffers(projectId, studioId) } : p))
     }
-    return [{ buffer: await loadSpatialBuffer(cue.targetUrl), traj: cue.trajectoryConfig, origin: 0 }]
+    const buffer = await loadSpatialBuffer(cue.targetUrl)
+    if (cue.format === 'ambisonics') return [{ buffer, traj: null, origin: 0, ambi: cue.ambisonicsConfig, key: `${cue.id}#0`, release: () => dropSpatialBuffer(cue.targetUrl) }]
+    return [{ buffer, traj: cue.trajectoryConfig, origin: 0 }]
   }
 
-  /** The direction the audience is looking (XR view / gyroscope), or null; turns the sound field for cues that ask. */
-  setListenerDirection(dir: { x: number; y: number; z: number } | null) {
-    this.spatial?.setListenerDirection(dir)
+  /**
+   * The audience's head orientation (a column-major 3×3 rotation) from the XR view or the gyroscope, or null; turns the
+   * sound field (trajectory listener, Ambisonics soundfield) for the cues that ask. The XR view wins over the gyroscope.
+   */
+  setListenerOrientation(m: ArrayLike<number> | null, source: 'xr' | 'device' = 'xr') {
+    if (source === 'xr') this.lastXrHead = m ? performance.now() : 0
+    else if (performance.now() - this.lastXrHead < 1000) return
+    this.spatial?.setListenerOrientation(m)
   }
+  private lastXrHead = 0
+
+  /** Called when a playing sound starts / stops wanting head tracking (the audience page offers the gyroscope). */
+  set onHeadWanted(cb: (wanted: boolean) => void) {
+    this.headWantedCb = cb
+    if (this.spatial) this.spatial.onHeadWanted = cb
+  }
+  private headWantedCb: (wanted: boolean) => void = () => {}
 
   /** Stop hits on this device: one hit id, or "*" for all ("Panic All Hits" / Panic Show). */
   stopHits(request: { target: string; seq: number; at: number } | null) {
@@ -595,10 +617,33 @@ export class StageAudioEngine {
 
   /** Get a cue ready before it is GOed: studio cues render their mix in the background. */
   prepare(cue: Cue | null | undefined) {
-    if (cue?.studioId && this.projectId && isMediaCue(cue)) prepareStudioMix(this.projectId, cue.studioId)
-    // STANDBY: fetch and decode a 3D file's sound now, so GO starts it on the spot.
-    else if (cue && this.isSpatialFile(cue)) loadSpatialBuffer(cue.targetUrl).catch(() => {})
+    this.standby = cue ?? null
+    // Renderers built for an earlier standby cue are of no use now.
+    dropPrewarmed(cue ? `${cue.id}#` : '\0')
+    // Only the devices the cue is for download, decode and set up anything (channel isolation).
+    const mine = !!cue && isMediaCue(cue) && cueTargets(cue, this.audienceId, this.audienceChannel)
+    // The soundfield file of an earlier standby cue is big: give it back unless something is playing it.
+    const next = mine && cue && this.isSpatialFile(cue) && cue.format === 'ambisonics' ? cue.targetUrl : null
+    const prev = this.standbyUrl
+    this.standbyUrl = next
+    if (prev && prev !== next && !Object.values(this.active).some((i) => i.cue.targetUrl === prev && this.spatial?.owns(i.instanceId))) dropSpatialBuffer(prev)
+    if (!cue || !mine) return
+    const ctx = this.ctx
+    if (cue.studioId && this.projectId) {
+      prepareStudioMix(this.projectId, cue.studioId)
+      // A studio with Ambisonics tracks: set up their decoders as soon as the stems are rendered.
+      if (ctx) studioMix(this.projectId, cue.studioId).then((mix) => mix.kind === 'spatial' && mix.parts.forEach((p, i) => p.ambi && prewarmAmbi(ctx, `${cue.id}#${i}`, p.ambi)), () => {})
+    }
+    // STANDBY: fetch and decode a 3D file's sound (and build its decoder) now, so GO starts it on the spot.
+    else if (this.isSpatialFile(cue)) {
+      loadSpatialBuffer(cue.targetUrl).catch(() => {})
+      if (ctx && cue.format === 'ambisonics') prewarmAmbi(ctx, `${cue.id}#0`, cue.ambisonicsConfig)
+    }
   }
+  /** The cue on standby, so a late unlock or a group change can set it up. */
+  private standby: Cue | null = null
+  /** The soundfield file it decoded for the standby cue (given back when another cue takes its place). */
+  private standbyUrl: string | null = null
 
   /**
    * (Re)compute a voice's playback from its instance timestamps: wait out pre-wait, seek to where
