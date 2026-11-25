@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { iamfDecoderStatus } from '../../studio/iamfDecoder'
-import { ELEMENT_GAIN_RANGE, activeMix, elementKey, normalizeIamf, type IamfConfig } from '../../types/spatialAudio'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { checkIamfDecoder, iamfDecoderStatus, subscribeIamfStatus } from '../../studio/iamfDecoder'
+import { activeMix, elementKey, normalizeIamf, type IamfConfig } from '../../types/spatialAudio'
 import { Section, Slider } from './Inspector'
 
 const db = (v: number) => `${v > 0 ? '+' : ''}${(Math.round(v * 10) / 10).toFixed(1)} dB`
@@ -16,6 +16,13 @@ export interface IamfEditorProps {
   probing?: boolean
   /** What the last probe said that the designer should know. */
   note?: string
+  /** Listen to the file with the current mix presentation and element gains (decoded by the IAMF decoder). */
+  audition?: {
+    context: () => AudioContext
+    output: () => AudioNode
+    /** Decode the file with these settings to binaural stereo. */
+    decode: (config: IamfConfig) => Promise<AudioBuffer>
+  }
 }
 
 /**
@@ -23,7 +30,7 @@ export interface IamfEditorProps {
  * an ambience version and a dialogue-forward version), a gain trim for each audio element of that mix, and head tracking.
  * Listening needs the IAMF decoder; without it the settings are still saved and applied once it is installed.
  */
-export function IamfEditor({ title, resetKey, value, onSave, onProbe, probing, note }: IamfEditorProps) {
+export function IamfEditor({ title, resetKey, value, onSave, onProbe, probing, note, audition }: IamfEditorProps) {
   const [draft, setDraft] = useState<IamfConfig>(value)
   const draftRef = useRef(draft)
   const [gesture, setGesture] = useState(false)
@@ -47,9 +54,57 @@ export function IamfEditor({ title, resetKey, value, onSave, onProbe, probing, n
     draftRef.current = clean
     setDraft(clean)
     onSave(clean, label)
+    // Listening: a different mix or gain is a different decode — carry on with the new one.
+    if (auditioning && (clean.mixPresentationId !== draft.mixPresentationId || JSON.stringify(clean.elementGainOverrides) !== JSON.stringify(draft.elementGainOverrides))) void startAudition(clean)
   }
 
-  const decoder = iamfDecoderStatus()
+  const decoder = useSyncExternalStore(subscribeIamfStatus, iamfDecoderStatus)
+  useEffect(() => {
+    void checkIamfDecoder()
+  }, [])
+
+  /* ---------- audition: decode with the current settings and loop it ---------- */
+  const [auditioning, setAuditioning] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [auditionNote, setAuditionNote] = useState('')
+  const player = useRef<{ src: AudioBufferSourceNode; gain: GainNode } | null>(null)
+  const startToken = useRef(0)
+  const stopAudition = () => {
+    startToken.current++
+    try {
+      player.current?.src.stop()
+    } catch {
+      // never started
+    }
+    player.current?.src.disconnect()
+    player.current?.gain.disconnect()
+    player.current = null
+    setAuditioning(false)
+  }
+  const startAudition = async (config: IamfConfig) => {
+    if (!audition) return
+    const token = ++startToken.current
+    setBusy(true)
+    setAuditionNote('')
+    try {
+      const ctx = audition.context()
+      await ctx.resume()
+      const buffer = await audition.decode(config)
+      if (token !== startToken.current) return
+      player.current?.src.stop()
+      const gain = new GainNode(ctx, { gain: 0.8 })
+      const src = new AudioBufferSourceNode(ctx, { buffer, loop: true })
+      src.connect(gain).connect(audition.output())
+      src.start()
+      player.current = { src, gain }
+      setAuditioning(true)
+    } catch (err) {
+      setAuditionNote(`無法試聽：${(err as Error).message}`)
+    } finally {
+      if (token === startToken.current) setBusy(false)
+    }
+  }
+  useEffect(() => () => stopAudition(), [resetKey]) // eslint-disable-line react-hooks/exhaustive-deps
   const src = draft.source
   const mix = activeMix(draft)
   const gainOf = (id: number) => draft.elementGainOverrides[elementKey(id)] ?? 0
@@ -72,7 +127,7 @@ export function IamfEditor({ title, resetKey, value, onSave, onProbe, probing, n
           )
         }
       >
-        {!decoder.available && <p className="rounded-md bg-amber-500/15 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-200">{decoder.reason}。設定會先存下來，解碼器安裝後即生效。</p>}
+        {!decoder.available && <p className="rounded-md bg-amber-500/15 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-200">{decoder.reason}。設定會先存下來。</p>}
         {src ? (
           <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
             <dt className="text-white/40">編碼</dt>
@@ -122,23 +177,34 @@ export function IamfEditor({ title, resetKey, value, onSave, onProbe, probing, n
       {mix && (
         <Section title="音訊元素增益 Audio Elements">
           {mix.elements.length === 0 && <p className="text-[11px] text-white/40">這個混音版本沒有可調的元素。</p>}
-          {mix.elements.map((el) => (
-            <div key={el.id} data-iamf-element={el.id}>
-              <Slider
-                label={`${el.name}（#${el.id}）`}
-                value={gainOf(el.id)}
-                min={ELEMENT_GAIN_RANGE.min}
-                max={ELEMENT_GAIN_RANGE.max}
-                step={0.5}
-                display={`${db(el.defaultGainDb + gainOf(el.id))}${gainOf(el.id) ? `（${db(gainOf(el.id))}）` : ''}`}
-                reset={0}
-                onChange={(v) => preview(normalizeIamf(setGain(el.id, v)))}
-                onCommit={(v) => commit(setGain(el.id, v), `元素「${el.name}」增益`)}
-                accent="#bf5af2"
-              />
-              <div className="mt-0.5 text-[10px] text-white/30">混音預設 {db(el.defaultGainDb)} ＋ 微調</div>
-            </div>
-          ))}
+          {mix.elements.map((el) =>
+            el.gainRange ? (
+              <div key={el.id} data-iamf-element={el.id}>
+                <Slider
+                  label={`${el.name}（#${el.id}）`}
+                  value={Math.min(el.gainRange.max, Math.max(el.gainRange.min, gainOf(el.id)))}
+                  min={el.gainRange.min}
+                  max={el.gainRange.max}
+                  step={0.5}
+                  display={`${db(el.defaultGainDb + gainOf(el.id))}${gainOf(el.id) ? `（${db(gainOf(el.id))}）` : ''}`}
+                  reset={0}
+                  onChange={(v) => preview(normalizeIamf(setGain(el.id, v)))}
+                  onCommit={(v) => commit(setGain(el.id, v), `元素「${el.name}」增益`)}
+                  accent="#bf5af2"
+                />
+                <div className="mt-0.5 text-[10px] text-white/30">
+                  混音預設 {db(el.defaultGainDb)}；檔案允許微調 {db(el.gainRange.min)} ~ {db(el.gainRange.max)}
+                </div>
+              </div>
+            ) : (
+              <div key={el.id} data-iamf-element={el.id} className="flex items-center justify-between gap-2 rounded-md bg-white/[0.04] px-2.5 py-2 text-[11px]">
+                <span className="text-white/70">
+                  {el.name}（#{el.id}）
+                </span>
+                <span className="text-right text-white/35">{db(el.defaultGainDb)} · 檔案未開放增益微調</span>
+              </div>
+            ),
+          )}
           {Object.keys(draft.elementGainOverrides).length > 0 && (
             <button type="button" onClick={() => commit({ ...draftRef.current, elementGainOverrides: {} }, '重設元素增益')} className="text-[11px] text-white/40 hover:text-white">
               全部重設
@@ -148,10 +214,19 @@ export function IamfEditor({ title, resetKey, value, onSave, onProbe, probing, n
       )}
 
       <Section title="試聽">
-        <button type="button" disabled title={decoder.available ? '' : decoder.reason} className="min-h-8 rounded-md bg-white/[0.07] px-3 text-[11px] font-semibold text-white/70 disabled:opacity-35">
-          ▶ 試聽這個混音版本
+        <button
+          type="button"
+          disabled={!audition || !decoder.available || busy}
+          onClick={() => (auditioning ? stopAudition() : void startAudition(draftRef.current))}
+          aria-pressed={auditioning}
+          title={decoder.available ? '' : decoder.reason}
+          className={`min-h-8 rounded-md px-3 text-[11px] font-semibold disabled:opacity-35 ${auditioning ? 'bg-accent text-white' : 'bg-white/[0.07] text-white/70 hover:bg-white/14'}`}
+          data-iamf-audition
+        >
+          {busy ? '解碼中…' : auditioning ? '■ 停止' : '▶ 試聽這個混音版本'}
         </button>
-        <p className="text-[10px] leading-relaxed text-white/35">{decoder.available ? '用目前選的混音版本與元素增益即時渲染成雙耳。' : '需要 IAMF 解碼器才能試聽。'}</p>
+        <p className="text-[10px] leading-relaxed text-white/35">用目前選的混音版本與元素增益渲染成雙耳，循環播放；切換版本時會重新解碼。</p>
+        {auditionNote && <p className="text-[11px] text-amber-300/80">{auditionNote}</p>}
       </Section>
 
       <Section title="觀眾端 · 頭部追蹤">
@@ -163,7 +238,9 @@ export function IamfEditor({ title, resetKey, value, onSave, onProbe, probing, n
         >
           {draft.bindHeadTracking ? '✓ 跟隨觀眾轉頭' : '固定朝向舞台'}
         </button>
-        <p className="text-[10px] leading-relaxed text-white/35">觀眾開啟陀螺儀或進入 XR 時，聲場隨頭部朝向旋轉。</p>
+        <p className="text-[10px] leading-relaxed text-white/35">
+          這個選項會先存下來。目前 Eclipsa 在觀眾端是預先解碼成固定朝向的雙耳聲音，即時頭部追蹤（串流解碼）還沒有啟用；需要聲場跟著轉頭時，請改用 Ambisonics。
+        </p>
       </Section>
     </div>
   )

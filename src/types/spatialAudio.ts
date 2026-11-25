@@ -82,6 +82,8 @@ export interface IamfMixElement {
   name: string
   /** The mix presentation's default gain for this element, dB. */
   defaultGainDb: number
+  /** The range (dB, around the default) the mix lets the element be trimmed within; missing = no trimming allowed. */
+  gainRange?: { min: number; max: number }
 }
 
 export interface IamfMixInfo {
@@ -182,7 +184,12 @@ export function normalizeIamfSource(raw: unknown): IamfSourceInfo | null {
       elements: toList(m.elements)
         .filter(withId)
         .slice(0, 64)
-        .map((e) => ({ id: Number(e.id), name: text(e.name), defaultGainDb: round(num(e.defaultGainDb, 0, -128, 127)) })),
+        .map((e) => ({
+          id: Number(e.id),
+          name: text(e.name),
+          defaultGainDb: round(num(e.defaultGainDb, 0, -128, 127)),
+          ...(e.gainRange && Number.isFinite(Number(e.gainRange.min)) && Number.isFinite(Number(e.gainRange.max)) ? { gainRange: { min: round(num(e.gainRange.min, 0, -128, 127)), max: round(num(e.gainRange.max, 0, -128, 127)) } } : {}),
+        })),
     }))
   return {
     primaryProfile: num(r.primaryProfile, 0, 0, 255),

@@ -1,6 +1,8 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useSpatialProbe } from '../../hooks/useSpatialProbe'
 import { firstRegionOf, regionSound } from '../../studio/audition'
+import { decodeIamfUrl } from '../../studio/iamfDecoder'
+import { normalizeIamfSource } from '../../types/spatialAudio'
 import type { StudioPlayer } from '../../studio/player'
 import { sortedTracks, type StudioProject, type StudioTrack } from '../../types/studio'
 import type { SpatialFormat } from '../../types/spatialAudio'
@@ -29,8 +31,13 @@ export function SpatialPanel({
   const { probe, loading, error, reload } = useSpatialProbe(region?.url)
   // An Eclipsa track learns its mix presentations from the file as soon as they are read.
   useEffect(() => {
-    if (track && track.format === 'eclipsa_iamf' && probe?.iamf && !track.iamfConfig.source) onTrack(track, { iamfConfig: { ...track.iamfConfig, source: probe.iamf } }, `「${track.name}」讀取 IAMF 檔案資訊`)
+    if (!track || track.format !== 'eclipsa_iamf' || !probe?.iamf) return
+    const next = normalizeIamfSource(probe.iamf)
+    if (JSON.stringify(next) === JSON.stringify(track.iamfConfig.source) || JSON.stringify(next) === written.current) return
+    written.current = JSON.stringify(next)
+    onTrack(track, { iamfConfig: { ...track.iamfConfig, source: probe.iamf } }, `「${track.name}」讀取 IAMF 檔案資訊`)
   }, [probe, track, onTrack])
+  const written = useRef('')
   const busCandidates = useMemo(() => (track ? sortedTracks(studio).filter((t) => t.id !== track.id && t.format === 'trajectory_binaural') : []), [studio, track])
 
   if (!track) return <p className="px-4 py-3 text-xs text-white/35">選取一個音軌以設定空間音訊</p>
@@ -94,6 +101,7 @@ export function SpatialPanel({
           value={track.iamfConfig}
           onSave={(next, label) => onTrack(track, { iamfConfig: next }, `「${track.name}」${label}`)}
           probing={loading}
+          audition={region ? { context: () => player.context, output: () => player.output(), decode: (cfg) => decodeIamfUrl(region.url, cfg) } : undefined}
           note={probe?.iamf ? undefined : probe && !loading ? 'Eclipsa 檔案的描述資料讀不到；請確認檔案是 IAMF（.iamf 或內含 IAMF 的 MP4 / M4A）' : undefined}
           onProbe={
             region

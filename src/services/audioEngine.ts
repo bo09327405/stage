@@ -13,6 +13,7 @@ import {
   type Cue,
 } from '../types/cue'
 import { dropStudioMixBuffers, prepareStudioMix, studioMix } from '../studio/cueMix'
+import { decodeIamfUrl, dropIamfUrl } from '../studio/iamfDecoder'
 import { SpatialStage, dropPrewarmed, dropSpatialBuffer, loadSpatialBuffer, prewarmAmbi, type SpatialPart } from './spatialStage'
 import type { FadeShape } from '../types/studio'
 import { fadeCurve } from '../utils/fadeCurve'
@@ -444,7 +445,7 @@ export class StageAudioEngine {
 
   /** A file cue that plays through the spatial stage (studio cues are decided when their mix is ready). */
   private isSpatialFile(cue: Cue) {
-    return cue.type === 'AUDIO' && !cue.studioId && !!cue.targetUrl && (cue.trajectoryConfig.enabled || cue.format === 'ambisonics')
+    return cue.type === 'AUDIO' && !cue.studioId && !!cue.targetUrl && (cue.trajectoryConfig.enabled || cue.format === 'ambisonics' || cue.format === 'eclipsa_iamf')
   }
 
   /** The decoded sound of a spatial cue: a file as one part, or a studio's bed and stems. */
@@ -458,6 +459,8 @@ export class StageAudioEngine {
       // A soundfield stem is big: it is named for pre-warming and gives its buffer back when the voice is released.
       return mix.parts.map((p, i) => (p.ambi ? { ...p, key: `${cue.id}#${i}`, release: () => dropStudioMixBuffers(projectId, studioId) } : p))
     }
+    // An Eclipsa (IAMF) file: decoded to binaural stereo by the WebAssembly decoder with the cue's mix presentation and gains.
+    if (cue.format === 'eclipsa_iamf') return [{ buffer: await decodeIamfUrl(cue.targetUrl, cue.iamfConfig), traj: null, origin: 0, release: () => dropIamfUrl(cue.targetUrl) }]
     const buffer = await loadSpatialBuffer(cue.targetUrl)
     if (cue.format === 'ambisonics') return [{ buffer, traj: null, origin: 0, ambi: cue.ambisonicsConfig, key: `${cue.id}#0`, release: () => dropSpatialBuffer(cue.targetUrl) }]
     return [{ buffer, traj: cue.trajectoryConfig, origin: 0 }]
@@ -623,10 +626,13 @@ export class StageAudioEngine {
     // Only the devices the cue is for download, decode and set up anything (channel isolation).
     const mine = !!cue && isMediaCue(cue) && cueTargets(cue, this.audienceId, this.audienceChannel)
     // The soundfield file of an earlier standby cue is big: give it back unless something is playing it.
-    const next = mine && cue && this.isSpatialFile(cue) && cue.format === 'ambisonics' ? cue.targetUrl : null
+    const next = mine && cue && this.isSpatialFile(cue) && (cue.format === 'ambisonics' || cue.format === 'eclipsa_iamf') ? cue.targetUrl : null
     const prev = this.standbyUrl
     this.standbyUrl = next
-    if (prev && prev !== next && !Object.values(this.active).some((i) => i.cue.targetUrl === prev && this.spatial?.owns(i.instanceId))) dropSpatialBuffer(prev)
+    if (prev && prev !== next && !Object.values(this.active).some((i) => i.cue.targetUrl === prev && this.spatial?.owns(i.instanceId))) {
+      dropSpatialBuffer(prev)
+      dropIamfUrl(prev)
+    }
     if (!cue || !mine) return
     const ctx = this.ctx
     if (cue.studioId && this.projectId) {
@@ -636,7 +642,8 @@ export class StageAudioEngine {
     }
     // STANDBY: fetch and decode a 3D file's sound (and build its decoder) now, so GO starts it on the spot.
     else if (this.isSpatialFile(cue)) {
-      loadSpatialBuffer(cue.targetUrl).catch(() => {})
+      if (cue.format === 'eclipsa_iamf') decodeIamfUrl(cue.targetUrl, cue.iamfConfig).catch(() => {})
+      else loadSpatialBuffer(cue.targetUrl).catch(() => {})
       if (ctx && cue.format === 'ambisonics') prewarmAmbi(ctx, `${cue.id}#0`, cue.ambisonicsConfig)
     }
   }

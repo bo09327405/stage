@@ -21,7 +21,15 @@ export function loadSource(url: string): Promise<AudioBuffer> {
     job = (async () => {
       const res = await fetch(url)
       if (!res.ok) throw new Error(`無法下載音檔（HTTP ${res.status}）`)
-      return decodeCtx().decodeAudioData(await res.arrayBuffer())
+      const data = await res.arrayBuffer()
+      try {
+        return await decodeCtx().decodeAudioData(data.slice(0))
+      } catch (err) {
+        // Eclipsa Audio (IAMF) cannot be decoded by the browser: the WebAssembly decoder renders it (default mix).
+        const iamf = await import('./iamfDecoder').then((m) => m.decodeIamfBytesDefault(new Uint8Array(data))).catch(() => null)
+        if (iamf) return iamf
+        throw err
+      }
     })()
     job.catch(() => sources.delete(url))
     sources.set(url, job)

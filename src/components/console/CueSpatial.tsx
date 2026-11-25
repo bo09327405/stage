@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSpatialProbe } from '../../hooks/useSpatialProbe'
 import { loadSpatialBuffer } from '../../services/spatialStage'
+import { decodeIamfUrl } from '../../studio/iamfDecoder'
 import type { SpatialProbe } from '../../studio/spatialProbe'
-import { SPATIAL_FORMATS, type AmbisonicsConfig, type IamfConfig, type SpatialFormat } from '../../types/spatialAudio'
+import { SPATIAL_FORMATS, normalizeIamfSource, type AmbisonicsConfig, type IamfConfig, type SpatialFormat } from '../../types/spatialAudio'
 import type { TrajectoryConfig } from '../../types/trajectory'
 import { AmbisonicsEditor } from '../studio/AmbisonicsEditor'
 import { IamfEditor } from '../studio/IamfEditor'
@@ -46,8 +47,13 @@ export function CueSpatial({
   }, [probe, onProbed])
   // An Eclipsa cue learns its mix presentations from the file as soon as they are read.
   useEffect(() => {
-    if (value.format === 'eclipsa_iamf' && probe?.iamf && !value.iamfConfig.source) onChange({ iamfConfig: { ...value.iamfConfig, source: probe.iamf } })
+    if (value.format !== 'eclipsa_iamf' || !probe?.iamf) return
+    const next = normalizeIamfSource(probe.iamf)
+    if (JSON.stringify(next) === JSON.stringify(value.iamfConfig.source) || JSON.stringify(next) === written.current) return
+    written.current = JSON.stringify(next)
+    onChange({ iamfConfig: { ...value.iamfConfig, source: probe.iamf } })
   }, [probe, value.format, value.iamfConfig, onChange])
+  const written = useRef('')
 
   const setFormat = (format: SpatialFormat) => onChange({ format, trajectoryConfig: { ...value.trajectoryConfig, enabled: format === 'trajectory_binaural' } })
   const audition = {
@@ -97,6 +103,7 @@ export function CueSpatial({
               value={value.iamfConfig}
               onSave={(next) => onChange({ iamfConfig: next })}
               probing={loading}
+              audition={url ? { context, output: () => context().destination, decode: (cfg) => decodeIamfUrl(url, cfg) } : undefined}
               onProbe={() => {
                 reload()
                 if (probe?.iamf) onChange({ iamfConfig: { ...value.iamfConfig, source: probe.iamf } })

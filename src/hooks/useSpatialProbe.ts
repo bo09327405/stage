@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { enrichIamfSource } from '../studio/iamfDecoder'
 import { probeSpatialUrl, type SpatialProbe } from '../studio/spatialProbe'
 
 const cache = new Map<string, SpatialProbe>()
@@ -21,7 +22,10 @@ export function useSpatialProbe(url: string | null | undefined) {
     }
     const ctl = new AbortController()
     setLoadingUrl(url)
-    probeSpatialUrl(url, ctl.signal).then(
+    probeSpatialUrl(url, ctl.signal)
+      // An Eclipsa file: the decoder adds what the header alone does not say (the range each element may be trimmed within).
+      .then(async (probe) => (probe.iamf ? { ...probe, iamf: await enrichIamfSource(url, probe.iamf) } : probe))
+      .then(
       (probe) => {
         cache.set(url, probe)
         if (!ctl.signal.aborted) setState({ url, probe, error: null })

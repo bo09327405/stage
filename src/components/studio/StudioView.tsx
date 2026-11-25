@@ -30,6 +30,7 @@ import {
   useStudioPresence,
 } from '../../services/studio'
 import { loadSource } from '../../studio/audio'
+import { enrichIamfSource } from '../../studio/iamfDecoder'
 import { probeSpatialUrl } from '../../studio/spatialProbe'
 import { DEFAULT_AMBISONICS, DEFAULT_IAMF, ambisonicOrderOf, type IamfSourceInfo } from '../../types/spatialAudio'
 import { DEFAULT_TRAJECTORY } from '../../types/trajectory'
@@ -467,6 +468,11 @@ export function StudioView({
         const decoded = buffer ?? (await loadSource(url))
         duration = decoded.duration
         channels = decoded.numberOfChannels
+        // An Eclipsa file is decoded by the WebAssembly decoder into plain stereo above: its header still says what it is.
+        if (!buffer) {
+          const probe = await probeSpatialUrl(url).catch(() => null)
+          if (probe?.iamf) iamf = await enrichIamfSource(url, probe.iamf)
+        }
       } catch (err) {
         const probe = await probeSpatialUrl(url).catch(() => null)
         if (!probe?.iamf) throw err
