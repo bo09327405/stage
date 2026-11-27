@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { SAMPLE_RATE } from '../../studio/audio'
 import { useProjectElevenKey } from '../../services/projectSecrets'
-import { BREAK_RANGE, DEFAULT_ELEVEN_VOICE, ELEVEN_MODEL, ELEVEN_VOICES, SPEED_RANGE, breakTag, synthesizeEleven } from '../../studio/tts'
+import { BREAK_RANGE, DEFAULT_ELEVEN_VOICE, ELEVEN_MODEL, ELEVEN_VOICES, SPEED_RANGE, breakTag, listElevenVoices, synthesizeEleven, type ElevenVoice } from '../../studio/tts'
 import { Section, Slider } from './Inspector'
 
 const readPref = (k: string) => {
@@ -41,6 +41,9 @@ export function TtsPanel({
 }) {
   const [apiKey, setApiKey] = useState(() => readPref('theatre.tts.elevenKey') ?? '')
   const project = useProjectElevenKey(projectId)
+  // The account's voices once a key works; until then (or if the list can't be fetched) the built-in premade ones.
+  const [list, setList] = useState<{ voices: ElevenVoice[]; live: boolean; error: string | null; loading: boolean }>({ voices: ELEVEN_VOICES, live: false, error: null, loading: false })
+  const [reload, setReload] = useState(0)
   const [voice, setVoice] = useState(() => readPref('theatre.tts.elevenVoice') ?? DEFAULT_ELEVEN_VOICE)
   const [customVoice, setCustomVoice] = useState(() => readPref('theatre.tts.elevenCustom') ?? '')
   const [speed, setSpeed] = useState(() => Math.min(SPEED_RANGE.max, Math.max(SPEED_RANGE.min, num('theatre.tts.elevenSpeed', 1))))
@@ -62,12 +65,39 @@ export function TtsPanel({
     writePref('theatre.tts.elevenSimilarity', String(similarity))
   }, [apiKey, voice, customVoice, speed, stability, similarity])
 
-  const voiceId = voice === CUSTOM ? customVoice.trim() : voice
   // Her own key first, the project's as the fallback.
   const personal = apiKey.trim()
   const effectiveKey = personal || project.key
+
+  useEffect(() => {
+    if (!effectiveKey) return
+    const ctl = new AbortController()
+    queueMicrotask(() => setList((l) => ({ ...l, loading: true, error: null })))
+    listElevenVoices(effectiveKey, ctl.signal)
+      .then((voices) => {
+        if (voices.length === 0) throw new Error('這個帳號沒有可用的聲音')
+        setList({ voices, live: true, error: null, loading: false })
+        // A saved choice that is not in this account's list (another key's voice) falls back to the first one.
+        setVoice((v) => (v === CUSTOM || voices.some((x) => x.id === v) ? v : voices[0].id))
+      })
+      .catch((err: Error) => {
+        if (err.name !== 'AbortError') setList({ voices: ELEVEN_VOICES, live: false, error: `${err.message}（改用內建聲音）`, loading: false })
+      })
+    return () => ctl.abort()
+  }, [effectiveKey, reload])
+
+  const voiceId = voice === CUSTOM ? customVoice.trim() : voice
   const chars = text.trim().length
-  const preset = ELEVEN_VOICES.find((v) => v.id === voice)
+  const preset = list.voices.find((v) => v.id === voice)
+  const mine = list.voices.filter((v) => v.category === 'generated' || v.category === 'cloned' || v.category === 'professional')
+  const premade = list.voices.filter((v) => v.category === 'premade')
+  const other = list.voices.filter((v) => !mine.includes(v) && !premade.includes(v))
+  const option = (v: ElevenVoice) => (
+    <option key={v.id} value={v.id}>
+      {v.label}
+      {v.note ? `（${v.note}）` : ''}
+    </option>
+  )
 
   const insertPause = (seconds: number) => {
     const el = area.current
@@ -137,13 +167,25 @@ export function TtsPanel({
           </p>
         </div>
         <label className="block">
-          <span className="mb-1 block text-xs text-white/60">聲音</span>
+          <span className="mb-1 flex items-center justify-between text-xs text-white/60">
+            聲音
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                setReload((n) => n + 1)
+              }}
+              disabled={!effectiveKey || list.loading}
+              className="text-[11px] text-white/45 hover:text-white disabled:opacity-30"
+              data-tts-voices-refresh
+            >
+              {list.loading ? '載入中…' : '[ 🔄 重新整理聲音清單 ]'}
+            </button>
+          </span>
           <select value={voice} onChange={(e) => setVoice(e.target.value)} className={`${input} appearance-none`} data-tts-voice>
-            {ELEVEN_VOICES.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.label}（{v.note}）
-              </option>
-            ))}
+            {mine.length > 0 && <optgroup label="我的自建聲音 (My Voices / Voice Design)">{mine.map(option)}</optgroup>}
+            {premade.length > 0 && <optgroup label="官方預設聲音 (Premade Voices)">{premade.map(option)}</optgroup>}
+            {other.length > 0 && <optgroup label="其他">{other.map(option)}</optgroup>}
             <option value={CUSTOM}>自訂 Voice ID…</option>
           </select>
         </label>
@@ -159,6 +201,7 @@ export function TtsPanel({
             data-tts-custom-voice
           />
         )}
+        {list.error && <p className="text-[11px] text-standby">{list.error}</p>}
         <p className="text-[10px] text-white/35" data-tts-voice-info>
           {preset ? `${preset.label} · ` : ''}
           {ELEVEN_MODEL} · ElevenLabs AI Voice
