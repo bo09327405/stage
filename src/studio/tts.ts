@@ -1,174 +1,97 @@
-import { SAMPLE_RATE, concatBuffers } from './audio'
-
 /*
- * TTS Maker: script → spoken clip.
+ * TTS Maker: script → spoken clip, by ElevenLabs. The browser calls the API directly with the user's own key
+ * (kept in localStorage, never in the code) and the MP3 that comes back is stored on R2 as it is.
  *
- * Pauses come from the text itself:
- *   ，、；：,;:        short pause (default 0.3 s)
- *   。！？!?…  . (not in a number)  and line breaks   long pause (default 0.8 s)
- *   ((⏱=3000))         an explicit pause in milliseconds (replaces the punctuation pause before it)
- * Each sentence is synthesized on its own, trimmed of the engine's own silence, and joined with
- * exactly these pauses — so timing is predictable for cueing.
+ * Pauses: ((⏱=3000)) in the script becomes ElevenLabs' <break time="3.0s" /> (a break is at most 3 s, so a longer
+ * pause is chained).
  */
 
-/** One menu voice (the server's table): Microsoft neural zh-TW, or a variation of one. */
-export interface TtsVoice {
+export interface ElevenVoice {
   id: string
-  /** 雅婷 */
   label: string
-  /** Yating */
-  en: string
-  gender: 'female' | 'male'
-  /** The Microsoft voice that speaks it, e.g. zh-TW-HsiaoChenNeural. */
-  voiceName: string
-  /** For variations: the voice it is based on (曉臻 …). */
-  base?: string
-  /** Its language, e.g. zh-TW, en-US (menu groups). */
-  lang?: string
-  /** false: this voice takes no pitch (e.g. Google Chirp 3 HD). */
-  pitch?: false
+  note: string
 }
 
-export type TtsEngine = 'google' | 'local' | 'azure' | 'edge'
+/** Premade voices every account (free plan too) can use through the API. Any other voice: paste its ID. */
+export const ELEVEN_VOICES: ElevenVoice[] = [
+  { id: '21m00Tcm4TlvDq8ikWAM', label: 'Rachel', note: '女聲・沉穩' },
+  { id: 'EXAVITQu4vr4xnSDxMaL', label: 'Sarah', note: '女聲・柔和' },
+  { id: 'pNInz6obpgDQGcFmaJgB', label: 'Adam', note: '男聲・低沉' },
+  { id: 'TxGEqnHWrfWFTfGW9XjX', label: 'Josh', note: '男聲・年輕' },
+  { id: 'ErXwobaYiN019PkySvjV', label: 'Antoni', note: '男聲・溫和' },
+]
 
-export const DEFAULT_TTS_VOICE = 'yating'
+export const ELEVEN_MODEL = 'eleven_multilingual_v2'
+export const DEFAULT_ELEVEN_VOICE = ELEVEN_VOICES[0].id
+export const SPEED_RANGE = { min: 0.7, max: 1.2 }
+/** A <break> is at most this long. */
+const MAX_BREAK = 3
 
-export type TtsSegment = { type: 'speech'; text: string } | { type: 'pause'; seconds: number; explicit: boolean }
-
-export interface PauseRules {
-  comma: number
-  period: number
-}
-
-export const DEFAULT_PAUSES: PauseRules = { comma: 0.3, period: 0.8 }
-
-/** The tag inserted for an explicit pause. */
+/** The tag the pause buttons insert. */
 export const pauseTag = (ms: number) => `((⏱=${Math.round(ms)}))`
 
 const TAG = /\(\(\s*⏱\s*=\s*(\d+(?:\.\d+)?)\s*\)\)/g
-const COMMA = '，、；：,;:'
-const PERIOD = '。！？!?…'
 
-export function parseScript(text: string, rules: PauseRules = DEFAULT_PAUSES): TtsSegment[] {
-  const out: TtsSegment[] = []
-  let speech = ''
-  const flush = () => {
-    const t = speech.trim()
-    if (t) out.push({ type: 'speech', text: t })
-    speech = ''
-  }
-  const pause = (seconds: number, explicit: boolean) => {
-    flush()
-    const last = out.at(-1)
-    if (last?.type === 'pause') {
-      // An explicit tag right after punctuation means "this long instead".
-      if (explicit && !last.explicit) Object.assign(last, { seconds, explicit: true })
-      else if (explicit) last.seconds += seconds
-      else last.seconds = Math.max(last.seconds, seconds)
-      return
+const breakTag = (seconds: number) => `<break time="${seconds.toFixed(1)}s" />`
+
+/** ((⏱=1000)) → <break time="1.0s" />; over 3 s it is several breaks in a row. */
+export function toElevenText(text: string): string {
+  return text.replace(TAG, (_, ms: string) => {
+    let left = Math.round(Number(ms) / 100) / 10
+    if (left <= 0) return ''
+    const tags: string[] = []
+    while (left > 0) {
+      const part = Math.min(MAX_BREAK, left)
+      tags.push(breakTag(part))
+      left = Math.round((left - part) * 10) / 10
     }
-    if (out.length === 0 && !explicit) return // no pause before anything is said
-    out.push({ type: 'pause', seconds, explicit })
-  }
-
-  let i = 0
-  const tags = [...text.matchAll(TAG)]
-  let nextTag = 0
-  while (i < text.length) {
-    const tag = tags[nextTag]
-    if (tag && tag.index === i) {
-      pause(Number(tag[1]) / 1000, true)
-      i += tag[0].length
-      nextTag++
-      continue
-    }
-    const ch = text[i]
-    const isDecimal = ch === '.' && /\d/.test(text[i - 1] ?? '') && /\d/.test(text[i + 1] ?? '')
-    if (COMMA.includes(ch)) {
-      speech += ch
-      pause(rules.comma, false)
-    } else if (PERIOD.includes(ch) || (ch === '.' && !isDecimal) || ch === '\n') {
-      if (ch !== '\n') speech += ch
-      pause(rules.period, false)
-    } else speech += ch
-    i++
-  }
-  flush()
-  // A trailing punctuation pause is just silence at the end of the clip.
-  while (out.at(-1)?.type === 'pause' && !(out.at(-1) as { explicit: boolean }).explicit) out.pop()
-  return out
-}
-
-export const scriptDuration = (segments: TtsSegment[]) => segments.reduce((s, x) => s + (x.type === 'pause' ? x.seconds : 0), 0)
-
-/** Static hosting (GitHub Pages…) has no speech server; it is not a failure to retry. */
-const STATIC_HOST = /\.github\.io$|\.pages\.dev$|\.netlify\.app$/i
-export const NO_TTS_ONLINE = '線上版沒有語音合成服務。TTS 需要在本機以 npm run dev 開啟 Studio 才能使用；已經生成並加入音軌的語音不受影響。'
-
-export async function listVoices(): Promise<{ available: boolean; voices: TtsVoice[]; engine?: TtsEngine; defaultVoice?: string; message?: string }> {
-  try {
-    const res = await fetch('/api/tts/voices')
-    return (await res.json()) as { available: boolean; voices: TtsVoice[]; engine: TtsEngine; defaultVoice: string }
-  } catch {
-    // Not JSON (the host's 404 page) or no connection.
-    const message = STATIC_HOST.test(location.hostname) ? NO_TTS_ONLINE : '無法連線到語音服務（請確認 npm run dev 仍在執行）'
-    return { available: false, voices: [], message }
-  }
-}
-
-/** Cut the engine's leading / trailing silence so pauses are exactly what the script says. */
-function trimSilence(b: AudioBuffer, threshold = 10 ** (-50 / 20), keep = 0.02): AudioBuffer {
-  const data = b.getChannelData(0)
-  let start = 0
-  let end = data.length - 1
-  while (start < end && Math.abs(data[start]) < threshold) start++
-  while (end > start && Math.abs(data[end]) < threshold) end--
-  const pad = Math.round(keep * b.sampleRate)
-  start = Math.max(0, start - pad)
-  end = Math.min(data.length - 1, end + pad)
-  const out = new AudioBuffer({ numberOfChannels: b.numberOfChannels, length: Math.max(1, end - start + 1), sampleRate: b.sampleRate })
-  for (let c = 0; c < b.numberOfChannels; c++) out.getChannelData(c).set(b.getChannelData(c).subarray(start, end + 1))
-  return out
-}
-
-const decoder = () => new OfflineAudioContext(1, 1, SAMPLE_RATE)
-
-async function speak(text: string, voice: string, speed: number, pitch: number, signal?: AbortSignal): Promise<AudioBuffer> {
-  const res = await fetch('/api/tts', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text, voice, speed, pitch }),
-    signal,
+    return ` ${tags.join(' ')} `
   })
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null
-    throw new Error(body?.error ?? `語音產生失敗（HTTP ${res.status}）`)
-  }
-  return trimSilence(await decoder().decodeAudioData(await res.arrayBuffer()))
 }
 
-/** Synthesize a whole script into one mono clip. `onProgress(done, total)` per sentence. */
-export async function synthesize(
-  segments: TtsSegment[],
-  { voice, speed = 1, pitch = 0, signal, onProgress }: { voice: string; speed?: number; pitch?: number; signal?: AbortSignal; onProgress?: (done: number, total: number) => void },
-): Promise<AudioBuffer> {
-  const speech = segments.filter((s): s is Extract<TtsSegment, { type: 'speech' }> => s.type === 'speech')
-  if (speech.length === 0) throw new Error('請輸入要朗讀的文字')
-  let done = 0
-  // A few sentences at a time keeps it quick without flooding the server.
-  const results = new Map<TtsSegment, AudioBuffer>()
-  const queue = [...speech]
-  await Promise.all(
-    Array.from({ length: Math.min(3, queue.length) }, async () => {
-      for (let s = queue.shift(); s; s = queue.shift()) {
-        results.set(s, await speak(s.text, voice, speed, pitch, signal))
-        onProgress?.(++done, speech.length)
-      }
-    }),
-  )
-  return concatBuffers(
-    segments.map((s) => (s.type === 'pause' ? { silence: s.seconds } : results.get(s)!)),
-    SAMPLE_RATE,
-    1,
-  )
+export interface ElevenSettings {
+  apiKey: string
+  voiceId: string
+  /** 0…1 */
+  stability: number
+  /** 0…1 */
+  similarity: number
+  speed: number
+}
+
+/** What went wrong, in words for the person at the console. */
+function failure(status: number, body: { detail?: { status?: string; message?: string } | string } | null): string {
+  const detail = typeof body?.detail === 'string' ? body.detail : body?.detail?.message
+  const code = typeof body?.detail === 'object' ? body.detail?.status : undefined
+  if (code === 'quota_exceeded') return 'ElevenLabs 字元額度已用完（免費版每月有字元上限），請等下個月重置或升級方案'
+  if (status === 401) return `API Key 錯誤或沒有權限，請重新貼上 sk_ 開頭的金鑰${detail ? `（${detail}）` : ''}`
+  if (status === 429) return '請求太頻繁或免費額度已用盡（429），請稍後再試'
+  if (status === 400 || status === 404 || status === 422) return `ElevenLabs 拒絕這次請求：${detail ?? `HTTP ${status}`}（請檢查 Voice ID 與台詞）`
+  return `語音產生失敗（HTTP ${status}${detail ? `：${detail}` : ''}）`
+}
+
+/** Speak `text` (the script's own syntax) and return the MP3. */
+export async function synthesizeEleven(text: string, s: ElevenSettings, signal?: AbortSignal): Promise<Blob> {
+  const converted = toElevenText(text).trim()
+  if (!converted) throw new Error('請輸入要朗讀的文字')
+  if (!s.apiKey) throw new Error('請先貼上 ElevenLabs API Key')
+  if (!s.voiceId) throw new Error('請選擇聲音或輸入 Voice ID')
+  let res: Response
+  try {
+    res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(s.voiceId)}`, {
+      method: 'POST',
+      headers: { 'xi-api-key': s.apiKey, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
+      body: JSON.stringify({
+        text: converted,
+        model_id: ELEVEN_MODEL,
+        voice_settings: { stability: s.stability, similarity_boost: s.similarity, speed: s.speed },
+      }),
+      signal,
+    })
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') throw err
+    throw new Error('無法連線到 ElevenLabs，請檢查網路')
+  }
+  if (!res.ok) throw new Error(failure(res.status, await res.json().catch(() => null)))
+  return new Blob([await res.arrayBuffer()], { type: 'audio/mpeg' })
 }

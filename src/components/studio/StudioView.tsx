@@ -585,10 +585,10 @@ export function StudioView({
       window.removeEventListener('drop', stop)
     }
   }, [])
-  const insertBuffer = async (buffer: AudioBuffer, name: string, kind: StudioRegion['kind']) => {
+  const insertBuffer = async (buffer: AudioBuffer, name: string, kind: StudioRegion['kind'], encoded?: { blob: Blob; fileName: string }) => {
     // Filed in this Studio's folder: recordings under 錄音, text-to-speech under 語音, anything else in the Studio folder itself.
     const placement = studio ? { studioId: studio.id, category: kind === 'recording' ? ('recording' as const) : kind === 'tts' ? ('tts' as const) : null } : null
-    const result = await uploadStudioAudio(buffer, { name, folder, projectId, placement })
+    const result = await uploadStudioAudio(buffer, { name, folder, projectId, placement, encoded })
     await insertUrl({ url: result.secure_url, name, publicId: result.public_id, kind, buffer })
   }
 
@@ -1356,7 +1356,7 @@ export function StudioView({
                 {tab === 'fx' && <FxPanel track={selectedTrackObj ?? tracks[0] ?? null} onTrack={(patch, label) => onTrackChange(selectedTrackObj ?? tracks[0], patch, label)} />}
                 {tab === 'space' && <SpatialPanel studio={studio} track={selectedTrackObj ?? tracks[0] ?? null} player={player} onTrack={onTrackChange} />}
                 {tab === 'library' && <LibraryPanel projectId={projectId} projectName={projectName} readOnly={lock.readOnly} studios={list ?? []} studioId={current} reveal={reveal} folder={folder} busy={busy} onInsert={(m) => insertUrl(m)} onNotify={notify} />}
-                {tab === 'tts' && <TtsPanel onPreview={previewBuffer} onInsert={(buffer, name) => insertBuffer(buffer, name, 'tts')} />}
+                {tab === 'tts' && <TtsPanel onPreview={previewBuffer} onInsert={(buffer, name, encoded) => insertBuffer(buffer, name, 'tts', encoded)} />}
               </Inspector>
               </div>
             </div>

@@ -18,10 +18,20 @@ export async function uploadStudioAudio(
     shared = false,
     bitDepth = 16,
     placement = null,
-  }: { name: string; folder: string; projectId: string; shared?: boolean; bitDepth?: 16 | 24; placement?: AssetPlacement | null },
+    encoded,
+  }: {
+    name: string
+    folder: string
+    projectId: string
+    shared?: boolean
+    bitDepth?: 16 | 24
+    placement?: AssetPlacement | null
+    /** Already-encoded audio (an MP3 from a speech service): stored as it is, under this file name, instead of a WAV of the buffer. */
+    encoded?: { blob: Blob; fileName: string }
+  },
 ): Promise<StoredFile> {
-  const fileName = `${name.replace(/[\\/:*?"<>|]+/g, '_').slice(0, 60) || 'studio'}.wav`
-  const file = new File([encodeWav(buffer, bitDepth)], fileName, { type: 'audio/wav' })
+  const fileName = encoded?.fileName ?? `${name.replace(/[\\/:*?"<>|]+/g, '_').slice(0, 60) || 'studio'}.wav`
+  const file = encoded ? new File([encoded.blob], fileName, { type: encoded.blob.type || 'audio/mpeg' }) : new File([encodeWav(buffer, bitDepth)], fileName, { type: 'audio/wav' })
   const result = await uploadStudioFile(file, { folder, name: fileName, duration: buffer.duration })
   primeSource(result.secure_url, buffer)
   // The file is usable even if the library index can't be written.
