@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { breakTag, listElevenVoices, synthesizeEleven } from '../src/studio/tts.ts'
+import { breakTag, listElevenVoices, pickDefaultVoice, synthesizeEleven } from '../src/studio/tts.ts'
 
 test('break tags are clamped to ElevenLabs\' 0.1-3 s', () => {
   assert.equal(breakTag(1), '<break time="1.0s" />')
@@ -42,7 +42,7 @@ test('voice list: community voices excluded by the request, pages followed, 402 
     assert.equal(init.headers['xi-api-key'], 'sk_x')
     return urls.length === 1
       ? Response.json({ voices: [{ voice_id: 'a', name: '台灣女聲', category: 'generated', labels: { gender: 'female', accent: 'taiwanese' } }], has_more: true, next_page_token: 'p2' })
-      : Response.json({ voices: [{ voice_id: 'b', name: 'Rachel', category: 'premade' }], has_more: false })
+      : Response.json({ voices: [{ voice_id: 'b', name: 'Rachel', category: 'premade' }, { voice_id: 'c', name: 'Lib', category: 'high_quality' }], has_more: false })
   }
   const voices = await listElevenVoices('sk_x')
   assert.deepEqual(voices.map((v) => [v.id, v.category]), [['a', 'generated'], ['b', 'premade']])
@@ -50,4 +50,12 @@ test('voice list: community voices excluded by the request, pages followed, 402 
   assert.match(urls[1], /next_page_token=p2/)
   globalThis.fetch = async () => new Response('{}', { status: 402 })
   await assert.rejects(synthesizeEleven('嗨', { apiKey: 'k', voiceId: 'v', stability: 0.5, similarity: 0.75, speed: 1 }), /付費方案/)
+})
+
+test('default voice: her own first, else Rachel, never a missing one', () => {
+  const v = (id, category) => ({ id, label: id, note: '', category })
+  assert.equal(pickDefaultVoice([v('x', 'premade'), v('21m00Tcm4TlvDq8ikWAM', 'premade'), v('own', 'generated')]), 'own')
+  assert.equal(pickDefaultVoice([v('x', 'premade'), v('21m00Tcm4TlvDq8ikWAM', 'premade')]), '21m00Tcm4TlvDq8ikWAM')
+  assert.equal(pickDefaultVoice([v('x', 'premade'), v('y', 'premade')]), 'x')
+  assert.equal(pickDefaultVoice([]), '')
 })

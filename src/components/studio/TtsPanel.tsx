@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { SAMPLE_RATE } from '../../studio/audio'
 import { useProjectElevenKey } from '../../services/projectSecrets'
-import { BREAK_RANGE, DEFAULT_ELEVEN_VOICE, ELEVEN_MODEL, ELEVEN_VOICES, SPEED_RANGE, breakTag, listElevenVoices, synthesizeEleven, type ElevenVoice } from '../../studio/tts'
+import { BREAK_RANGE, DEFAULT_ELEVEN_VOICE, ELEVEN_MODEL, ELEVEN_VOICES, SPEED_RANGE, breakTag, listElevenVoices, pickDefaultVoice, synthesizeEleven, type ElevenVoice } from '../../studio/tts'
 import { Section, Slider } from './Inspector'
 
 const readPref = (k: string) => {
@@ -77,8 +77,8 @@ export function TtsPanel({
       .then((voices) => {
         if (voices.length === 0) throw new Error('這個帳號沒有可用的聲音')
         setList({ voices, live: true, error: null, loading: false })
-        // A saved choice that is not in this account's list (another key's voice) falls back to the first one.
-        setVoice((v) => (v === CUSTOM || voices.some((x) => x.id === v) ? v : voices[0].id))
+        // A saved choice that is not in this account's list (a community voice, another key's voice) falls back to her own voice, else Rachel.
+        setVoice((v) => (v === CUSTOM || voices.some((x) => x.id === v) ? v : pickDefaultVoice(voices)))
       })
       .catch((err: Error) => {
         if (err.name !== 'AbortError') setList({ voices: ELEVEN_VOICES, live: false, error: `${err.message}（改用內建聲音）`, loading: false })

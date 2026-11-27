@@ -80,6 +80,17 @@ export async function synthesizeEleven(text: string, s: ElevenSettings, signal?:
   return new Blob([await res.arrayBuffer()], { type: 'audio/mpeg' })
 }
 
+/** Categories the free plan's API refuses (library / community voices), whatever the request asked for. */
+const NOT_FREE = new Set(['high_quality', 'library', 'community', 'shared'])
+
+/** The voice to start from: the person's own (Voice Design / cloned) first, else Rachel or another premade one, else the first. */
+export function pickDefaultVoice(voices: ElevenVoice[]): string {
+  const own = voices.find((v) => v.category === 'generated' || v.category === 'cloned')
+  if (own) return own.id
+  const premade = voices.filter((v) => v.category === 'premade')
+  return (premade.find((v) => v.id === DEFAULT_ELEVEN_VOICE) ?? premade[0] ?? voices[0])?.id ?? ''
+}
+
 /**
  * The voices this key can speak with on the free plan: the account's own (Voice Design, clones) and the premade ones —
  * community-library voices are left out because the API refuses them (402).
@@ -103,6 +114,7 @@ export async function listElevenVoices(apiKey: string, signal?: AbortSignal): Pr
       next_page_token?: string | null
     }
     for (const v of body.voices ?? []) {
+      if (v.category && NOT_FREE.has(v.category)) continue
       const gender = v.labels?.gender === 'female' ? '女聲' : v.labels?.gender === 'male' ? '男聲' : ''
       out.push({ id: v.voice_id, label: v.name || v.voice_id, note: [gender, v.labels?.accent].filter(Boolean).join('・'), category: v.category })
     }
