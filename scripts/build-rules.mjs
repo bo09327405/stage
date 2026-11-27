@@ -221,6 +221,17 @@ const rules = {
       },
     },
 
+    // Keys an admin sets for a project (the default ElevenLabs API Key): members read them (their browser calls the
+    // service), only admins write. Not under projects/{pid}, so forks, exports and version history never copy them.
+    projectSecrets: {
+      $pid: {
+        '.read': or(isAdmin, member),
+        '.write': isAdmin,
+        '.validate': "newData.val() == null || newData.hasChildren(['projectElevenLabsApiKey'])",
+        projectElevenLabsApiKey: { '.validate': "newData.isString() && newData.val().length < 200" },
+      },
+    },
+
     // Each user's hub entries: only they (and admins) read or change them.
     userProjects: {
       // Admins read everyone's (moving a studio updates the hub entries that point at it).

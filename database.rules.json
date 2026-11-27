@@ -141,6 +141,16 @@
         ".write": "((auth != null && auth.token.email_verified == true && (auth.token.email.toLowerCase() == 'bo0912013792@gmail.com' || auth.token.email.toLowerCase() == 'bo09327405@mail2.chshs.ntpc.edu.tw')) || (auth != null && !data.exists() && newData.child('editor/uid').val() == auth.uid))"
       }
     },
+    "projectSecrets": {
+      "$pid": {
+        ".read": "((auth != null && auth.token.email_verified == true && (auth.token.email.toLowerCase() == 'bo0912013792@gmail.com' || auth.token.email.toLowerCase() == 'bo09327405@mail2.chshs.ntpc.edu.tw')) || (auth != null && (root.child('projectIndex').child($pid).child('owner/uid').val() == auth.uid || root.child('projectIndex').child($pid).child('collaborators').child(auth.uid).exists())))",
+        ".write": "(auth != null && auth.token.email_verified == true && (auth.token.email.toLowerCase() == 'bo0912013792@gmail.com' || auth.token.email.toLowerCase() == 'bo09327405@mail2.chshs.ntpc.edu.tw'))",
+        ".validate": "newData.val() == null || newData.hasChildren(['projectElevenLabsApiKey'])",
+        "projectElevenLabsApiKey": {
+          ".validate": "newData.isString() && newData.val().length < 200"
+        }
+      }
+    },
     "userProjects": {
       ".read": "(auth != null && auth.token.email_verified == true && (auth.token.email.toLowerCase() == 'bo0912013792@gmail.com' || auth.token.email.toLowerCase() == 'bo09327405@mail2.chshs.ntpc.edu.tw'))",
       "$uid": {

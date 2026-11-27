@@ -2,8 +2,7 @@
  * TTS Maker: script → spoken clip, by ElevenLabs. The browser calls the API directly with the user's own key
  * (kept in localStorage, never in the code) and the MP3 that comes back is stored on R2 as it is.
  *
- * Pauses: ((⏱=3000)) in the script becomes ElevenLabs' <break time="3.0s" /> (a break is at most 3 s, so a longer
- * pause is chained).
+ * Pauses are ElevenLabs' own SSML tag, written in the script as it is: <break time="1.0s" /> (at most 3 s each).
  */
 
 export interface ElevenVoice {
@@ -24,30 +23,9 @@ export const ELEVEN_VOICES: ElevenVoice[] = [
 export const ELEVEN_MODEL = 'eleven_multilingual_v2'
 export const DEFAULT_ELEVEN_VOICE = ELEVEN_VOICES[0].id
 export const SPEED_RANGE = { min: 0.7, max: 1.2 }
-/** A <break> is at most this long. */
-const MAX_BREAK = 3
-
-/** The tag the pause buttons insert. */
-export const pauseTag = (ms: number) => `((⏱=${Math.round(ms)}))`
-
-const TAG = /\(\(\s*⏱\s*=\s*(\d+(?:\.\d+)?)\s*\)\)/g
-
-const breakTag = (seconds: number) => `<break time="${seconds.toFixed(1)}s" />`
-
-/** ((⏱=1000)) → <break time="1.0s" />; over 3 s it is several breaks in a row. */
-export function toElevenText(text: string): string {
-  return text.replace(TAG, (_, ms: string) => {
-    let left = Math.round(Number(ms) / 100) / 10
-    if (left <= 0) return ''
-    const tags: string[] = []
-    while (left > 0) {
-      const part = Math.min(MAX_BREAK, left)
-      tags.push(breakTag(part))
-      left = Math.round((left - part) * 10) / 10
-    }
-    return ` ${tags.join(' ')} `
-  })
-}
+/** The SSML pause the toolbar inserts; ElevenLabs allows 0.1–3 s per break. */
+export const BREAK_RANGE = { min: 0.1, max: 3 }
+export const breakTag = (seconds: number) => `<break time="${Math.min(BREAK_RANGE.max, Math.max(BREAK_RANGE.min, seconds)).toFixed(1)}s" />`
 
 export interface ElevenSettings {
   apiKey: string
@@ -70,9 +48,9 @@ function failure(status: number, body: { detail?: { status?: string; message?: s
   return `語音產生失敗（HTTP ${status}${detail ? `：${detail}` : ''}）`
 }
 
-/** Speak `text` (the script's own syntax) and return the MP3. */
+/** Speak `text` (plain text with optional <break> tags) and return the MP3. */
 export async function synthesizeEleven(text: string, s: ElevenSettings, signal?: AbortSignal): Promise<Blob> {
-  const converted = toElevenText(text).trim()
+  const converted = text.trim()
   if (!converted) throw new Error('請輸入要朗讀的文字')
   if (!s.apiKey) throw new Error('請先貼上 ElevenLabs API Key')
   if (!s.voiceId) throw new Error('請選擇聲音或輸入 Voice ID')

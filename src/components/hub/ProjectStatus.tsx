@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { isAdmin, type AppUser } from '../../services/auth'
+import { setProjectElevenKey, useHasProjectElevenKey } from '../../services/projectSecrets'
 import { READ_ONLY_EVENT, forkProject, forkUrl, setProjectFlags, useProjectLock } from '../../services/projectLock'
 import type { ProjectSummary } from '../../types/project'
 import { PromptDialog } from '../ui/PromptDialog'
@@ -90,7 +91,85 @@ export function AdminProjectFlags({ user, project }: { user: AppUser; project: P
       {btn('isLocked', '🔓 解除鎖定', '🔒 唯讀鎖定')}
       {btn('isMasterTemplate', '✖ 取消官方範本', '⭐ 設為官方範本')}
       {btn('isArchived', '↩ 取消封存', '📦 封存')}
+      <ElevenKeyButton projectId={project.id} />
     </div>
+  )
+}
+
+/** Admin: the project's default ElevenLabs API Key (what Studio's TTS uses when a person has no key of their own). Never shown, only replaced or removed. */
+function ElevenKeyButton({ projectId }: { projectId: string }) {
+  const has = useHasProjectElevenKey(projectId)
+  const [open, setOpen] = useState(false)
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const save = async (key: string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await setProjectElevenKey(projectId, key)
+      setValue('')
+      setOpen(false)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={`min-h-8 rounded-lg px-2.5 text-[11px] font-semibold ${has ? 'bg-white/20 text-white' : 'bg-white/[0.06] text-white/55 hover:bg-white/10'}`}
+        data-admin-eleven-key
+      >
+        🔑 ElevenLabs Key{has ? ' ✓' : ''}
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setOpen(false)}>
+          <form
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (value.trim()) void save(value)
+            }}
+            className="w-full max-w-md space-y-4 rounded-2xl border border-line bg-panel p-6 shadow-2xl"
+          >
+            <div>
+              <h2 className="text-lg font-semibold">ElevenLabs 專案預設 API Key</h2>
+              <p className="mt-1 text-sm text-white/45">專案成員的 Studio TTS 沒有填個人金鑰時，會使用這一組。金鑰不會顯示在畫面上；貼上新的會取代舊的。</p>
+              <p className="mt-1 text-xs text-standby">注意：成員的瀏覽器需要讀到金鑰才能呼叫 ElevenLabs，懂開發者工具的成員可以看到它。請使用有額度上限的專用金鑰。</p>
+            </div>
+            <input
+              type="password"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={has ? '已設定（貼上新的金鑰以取代）' : 'sk_…'}
+              autoComplete="off"
+              spellCheck={false}
+              autoFocus
+              className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 font-mono text-sm text-white outline-none focus:border-accent"
+              data-admin-eleven-key-input
+            />
+            {error && <p className="text-xs text-panic">{error}</p>}
+            <div className="flex justify-between gap-2">
+              <button type="button" disabled={busy || !has} onClick={() => save('')} className="min-h-10 rounded-lg px-3 text-sm text-panic hover:bg-panic/10 disabled:opacity-30">
+                移除金鑰
+              </button>
+              <span className="flex gap-2">
+                <button type="button" onClick={() => setOpen(false)} className="min-h-10 rounded-lg px-3 text-sm text-white/60 hover:text-white">
+                  取消
+                </button>
+                <button type="submit" disabled={busy || !value.trim()} className="min-h-10 rounded-lg bg-accent px-4 text-sm font-semibold text-white disabled:opacity-40">
+                  {busy ? '儲存中…' : '儲存'}
+                </button>
+              </span>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
   )
 }
 

@@ -1356,7 +1356,7 @@ export function StudioView({
                 {tab === 'fx' && <FxPanel track={selectedTrackObj ?? tracks[0] ?? null} onTrack={(patch, label) => onTrackChange(selectedTrackObj ?? tracks[0], patch, label)} />}
                 {tab === 'space' && <SpatialPanel studio={studio} track={selectedTrackObj ?? tracks[0] ?? null} player={player} onTrack={onTrackChange} />}
                 {tab === 'library' && <LibraryPanel projectId={projectId} projectName={projectName} readOnly={lock.readOnly} studios={list ?? []} studioId={current} reveal={reveal} folder={folder} busy={busy} onInsert={(m) => insertUrl(m)} onNotify={notify} />}
-                {tab === 'tts' && <TtsPanel onPreview={previewBuffer} onInsert={(buffer, name, encoded) => insertBuffer(buffer, name, 'tts', encoded)} />}
+                {tab === 'tts' && <TtsPanel projectId={projectId} onPreview={previewBuffer} onInsert={(buffer, name, encoded) => insertBuffer(buffer, name, 'tts', encoded)} />}
               </Inspector>
               </div>
             </div>
