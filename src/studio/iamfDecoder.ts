@@ -38,14 +38,14 @@ export async function checkIamfDecoder(): Promise<IamfDecoderStatus> {
 }
 
 /** Element gain trims for libiamf: the designer's overrides, by element id. */
-const gainsOf = (cfg: IamfConfig) => Object.fromEntries(Object.entries(cfg.elementGainOverrides).map(([k, v]) => [Number(k.slice(1)), v]))
+export const iamfElementGains = (cfg: IamfConfig) => Object.fromEntries(Object.entries(cfg.elementGainOverrides).map(([k, v]) => [Number(k.slice(1)), v]))
 
 /** Decoded files kept for a moment (a studio re-reads a region many times while it plays / is edited). */
 const decoded = new Map<string, Promise<AudioBuffer>>()
 
 /** Decode the IAMF file at `url` with the config's mix presentation and element gains. */
 export function decodeIamfUrl(url: string, cfg: IamfConfig): Promise<AudioBuffer> {
-  const gains = gainsOf(cfg)
+  const gains = iamfElementGains(cfg)
   const key = `${url}|${cfg.mixPresentationId ?? ''}|${JSON.stringify(gains)}`
   let job = decoded.get(key)
   if (!job) {

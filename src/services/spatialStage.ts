@@ -20,6 +20,7 @@ import type { FadeShape } from '../types/studio'
  */
 
 const CUT_FADE = 0.03
+const lengthOf = (p: SpatialPart) => p.buffer?.duration ?? p.live?.duration ?? 0
 /** Audio-clock lead so a start that is due now is not already late when the nodes are built. */
 const LEAD = 0.03
 /** Decoded files kept for the next GO (older ones are dropped; voices hold what they play). */
@@ -27,9 +28,27 @@ const CACHE_MAX = 4
 /** …and never more than this many bytes of decoded audio (a few minutes of 4-channel sound is already a lot for a phone). */
 const CACHE_BYTES = 160 * 1024 * 1024
 
+/** A sound rendered while it plays (an Eclipsa file whose binaural render follows the listener's head) instead of decoded ahead into a buffer. */
+export interface LiveSource {
+  output: AudioNode
+  /** Length, seconds. */
+  duration: number
+  /** Play from `pos` seconds so that this moment is `when` on the audio clock; loop inside `loop` when given. */
+  play(when: number, pos: number, loop: { start: number; end: number } | null): void
+  stop(): void
+  /** The listener's head (column-major 3×3, local → scene), or null. */
+  setHead(m: ArrayLike<number> | null): void
+  /** Lead time the source needs between asking it to play and its first sound, seconds. */
+  readonly lead: number
+}
+
 /** One sound of a spatial cue: a file, a studio's bed (no trajectory) or a studio track with its own path. */
 export interface SpatialPart {
-  buffer: AudioBuffer
+  /** The decoded sound (absent for a `live` part). */
+  buffer?: AudioBuffer
+  /** A sound rendered live; `head` says it follows the listener's head. */
+  live?: LiveSource
+  head?: boolean
   /** null = plain stereo (a studio's non-spatial tracks mixed together). */
   traj: TrajectoryConfig | null
   /** Seconds into the buffer where the path clock starts (a studio track's first region). */
@@ -280,6 +299,7 @@ export class SpatialStage {
       }
       if (!p.traj) {
         inputs[i].connect(env)
+        p.live?.output.connect(inputs[i])
         return null
       }
       const runner = new SpatialRunner(ctx, p.traj)
@@ -311,23 +331,30 @@ export class SpatialStage {
     const loop = cue.loop
     const wrap = loop && Number.isFinite(segment) && segment > 0
     const wait = Math.max(0, (startAt - now) / 1000)
-    const elapsed = Math.max(0, (now - startAt) / 1000) + (wait > 0 ? 0 : LEAD)
+    // A live part needs a moment to have its first audio ready; the whole cue then starts that much later (the position follows).
+    const lead = Math.max(LEAD, ...voice.parts.map((p) => p.live?.lead ?? 0))
+    const elapsed = Math.max(0, (now - startAt) / 1000) + (wait > 0 ? 0 : lead)
     const pos0 = cue.mediaStartTime + (wrap ? elapsed % segment : elapsed)
     const t = ctx.currentTime
-    const when = t + (wait > 0 ? wait : LEAD)
+    const when = t + (wait > 0 ? wait : lead)
     // Every part wraps at the same moment, and the path wraps with it (a studio's buffers carry a reverb tail past its length).
-    const loopEnd = cue.mediaEndTime > 0 ? cue.mediaEndTime : cue.duration > 0 ? cue.duration : Math.max(...voice.parts.map((p) => p.buffer.duration))
+    const loopEnd = cue.mediaEndTime > 0 ? cue.mediaEndTime : cue.duration > 0 ? cue.duration : Math.max(...voice.parts.map(lengthOf))
 
     voice.parts.forEach((part, i) => {
-      if (!loop && pos0 >= part.buffer.duration) return
-      const src = new AudioBufferSourceNode(ctx, { buffer: part.buffer, loop })
-      if (loop) {
-        src.loopStart = cue.mediaStartTime
-        src.loopEnd = Math.min(loopEnd, part.buffer.duration)
+      const length = lengthOf(part)
+      if (!loop && pos0 >= length) return
+      if (part.live) {
+        part.live.play(when, Math.min(pos0, Math.max(0, length - 0.001)), loop ? { start: cue.mediaStartTime, end: Math.min(loopEnd, length) } : null)
+      } else if (part.buffer) {
+        const src = new AudioBufferSourceNode(ctx, { buffer: part.buffer, loop })
+        if (loop) {
+          src.loopStart = cue.mediaStartTime
+          src.loopEnd = Math.min(loopEnd, length)
+        }
+        src.connect(voice.inputs[i])
+        src.start(when, Math.min(pos0, Math.max(0, length - 0.001)))
+        voice.sources.push(src)
       }
-      src.connect(voice.inputs[i])
-      src.start(when, Math.min(pos0, Math.max(0, part.buffer.duration - 0.001)))
-      voice.sources.push(src)
       voice.runners[i]?.start((ct) => {
         let pos = pos0 + (ct - when)
         if (wrap) pos = cue.mediaStartTime + ((pos - cue.mediaStartTime) % segment)
@@ -433,6 +460,7 @@ export class SpatialStage {
   }
 
   private stopSources(voice: SVoice) {
+    for (const p of voice.parts) p.live?.stop()
     for (const s of voice.sources) {
       try {
         s.stop()
@@ -490,7 +518,7 @@ export class SpatialStage {
 
   /** Whether any playing sound wants the head's orientation. */
   headWanted() {
-    return [...this.voices.values()].some((v) => v.parts.some((p) => p.traj?.headTrack || p.ambi?.bindHeadTracking))
+    return [...this.voices.values()].some((v) => v.parts.some((p) => p.traj?.headTrack || p.ambi?.bindHeadTracking || (p.live && p.head)))
   }
 
   /** Turn each soundfield: its own offset, plus the opposite of the head's turn when it is bound to the head. */
@@ -499,6 +527,7 @@ export class SpatialStage {
       v.parts.forEach((p, i) => {
         const r = v.renderers[i]
         if (r && p.ambi) r.setMatrix(headFieldMatrix(p.ambi.bindHeadTracking ? this.head : null, p.ambi.rotationOffset))
+        if (p.live && p.head) p.live.setHead(this.head)
       })
     }
     const wanted = this.headWanted()

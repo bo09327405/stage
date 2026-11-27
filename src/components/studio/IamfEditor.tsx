@@ -239,7 +239,7 @@ export function IamfEditor({ title, resetKey, value, onSave, onProbe, probing, n
           {draft.bindHeadTracking ? '✓ 跟隨觀眾轉頭' : '固定朝向舞台'}
         </button>
         <p className="text-[10px] leading-relaxed text-white/35">
-          這個選項會先存下來。目前 Eclipsa 在觀眾端是預先解碼成固定朝向的雙耳聲音，即時頭部追蹤（串流解碼）還沒有啟用；需要聲場跟著轉頭時，請改用 Ambisonics。
+          開啟後，觀眾端會邊播邊解碼，聲音隨手機陀螺儀或 XR 視角轉動，轉頭後聲音留在原本的方位（反應約 0.15 秒）。這比預先解碼更吃效能；瀏覽器不支援即時解碼時，會自動改用固定朝向的版本。Studio 裡的試聽不含頭部追蹤。
         </p>
       </Section>
     </div>
